@@ -167,7 +167,7 @@ function printBill(bill) {
 
   <div class="center bold big">MANISH DAIRY</div>
   <div class="center shop-sub">SWEETS AND NAMKEEN</div>
-  <div class="center shop-addr">24/1, Basant Vihar, Jail Chungi, Meerut</div>
+  <div class="center shop-addr">Ganganagar, Meerut</div>
   <div class="divider-solid"></div>
 
   <div class="row"><span>Date:</span><span>${formatDate(bill.date)} ${formatTime(bill.date)}</span></div>
@@ -204,7 +204,7 @@ function printBill(bill) {
   <div class="divider-dash"></div>
   <div class="footer">Thank you for visiting!</div>
 
-  <div class="footer">Jail Chungi, Meerut</div>
+  
   <br/>
   
   </body></html>`);
