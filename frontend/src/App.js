@@ -541,14 +541,13 @@ const confirmPopup = () => {
     let overrideTotal = null;
 
     if (popup.tempAmt !== "" && popup.tempAmt !== undefined && +popup.tempAmt > 0) {
-      if (popup.price > 0) {
-        qty = +((+popup.tempAmt / popup.price).toFixed(3));
-      } else {
-        // Price 0 hai toh qty=1 rakho aur total manually set karo
-        qty = 1;
-        overrideTotal = +popup.tempAmt;
-      }
-    } else {
+     if (popup.price > 0) {
+  qty = +((+popup.tempAmt / popup.price).toFixed(3));
+} else {
+  // Price 0 hai toh tempQty use karo, aur tempAmt total banega
+  qty = parseFloat(popup.tempQty) || 1;
+  overrideTotal = +popup.tempAmt * qty;
+}} else {
       qty = parseFloat(popup.tempQty) || 0;
     }
     
@@ -560,7 +559,7 @@ const confirmPopup = () => {
     if (overrideTotal !== null) {
       // Price 0 wale item ka total manually set karo
       setCart(prev => prev.map(i => 
-        i.id === popup.id ? { ...i, qty: 1, total: overrideTotal, price: overrideTotal } : i
+     i.id === popup.id ? { ...i, qty: qty, total: overrideTotal, price: overrideTotal / qty } : i
       ));
     } else {
       updateQty(popup.id, qty);
