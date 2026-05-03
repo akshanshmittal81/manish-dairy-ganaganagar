@@ -187,22 +187,22 @@ function printBill(bill) {
     <div class="row-3">
       <span class="col-name">${i.name}</span>
       <span class="col-qty">${formatQty(i.qty, i.unit)}</span>
-      <span class="col-amt">₹${i.total.toFixed(2)}</span>
+     <span class="col-amt">₹${Math.round(i.total)}</span>
     </div>
   `).join("")}
 
   <div class="divider-dash"></div>
   ${bill.discountPct > 0 ? `
-    <div class="row"><span>Subtotal</span><span>₹${bill.subtotal.toFixed(2)}</span></div>
-    <div class="row bold"><span>Discount (${bill.discountPct}%)</span><span>-₹${bill.discountAmt.toFixed(2)}</span></div>
+    <div class="row"><span>Subtotal</span><span>₹${Math.round(bill.subtotal)}</span></div>
+    <div class="row bold"><span>Discount (${bill.discountPct}%)</span><span>-₹${Math.round(bill.discountAmt)}</span></div>
   ` : ""}
   <div class="divider-solid"></div>
-  <div class="total-row"><span>TOTAL</span><span>₹${bill.total.toFixed(2)}</span></div>
+  <div class="total-row"><span>TOTAL</span><span>₹${Math.round(bill.total)}</span></div>
   <div class="divider-solid"></div>
   <div class="payment-row"><span>Payment:</span><span>${bill.paymentMode || "CASH"}</span></div>
 
   <div class="divider-dash"></div>
-  <div class="footer">Thank you for visiting!</div>
+  <div class="footer">Thank you!!Please Visit Again!</div>
 
   
   <br/>
