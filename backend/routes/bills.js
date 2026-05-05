@@ -50,7 +50,7 @@ router.post("/", async (req, res) => {
     const profit = total - cost;
 
     const billData = {
-      id: "MD" + Date.now(),
+      id: "MD" + String(Date.now()).slice(-5),
       date: new Date(),
 
       items,
