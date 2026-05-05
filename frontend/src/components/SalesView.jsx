@@ -6,7 +6,8 @@
 
  export default function SalesView({ bills, onDelete, onDeleteAll, onEdit, products, onFilterChange, onLoadEdit }) {
     const [filter,      setFilter]      = useState("today");
-    const [customDate,  setCustomDate]  = useState("");
+    const [startDate, setStartDate] = useState("");
+const [endDate,   setEndDate]   = useState("");
     const [selected,    setSelected]    = useState([]);
     const [editingBill, setEditingBill] = useState(null);
     const [editItems,   setEditItems]   = useState([]);
@@ -53,14 +54,19 @@
       if (filter === "today"     && b.date?.slice(0, 10) !== todayStr)     return false;
       if (filter === "yesterday" && b.date?.slice(0, 10) !== yesterdayStr) return false;
       if (filter === "month"     && b.date?.slice(0, 7)  !== monthStr)     return false;
-      if (filter === "custom"    && b.date?.slice(0, 10) !== customDate)   return false;
+    if (filter === "custom") {
+  const d = b.date?.slice(0, 10);
+  if (!startDate && !endDate) return false;
+  if (startDate && d < startDate) return false;
+  if (endDate   && d > endDate)   return false;
+}
       if (payFilter !== "ALL" && (b.paymentMode || "CASH") !== payFilter)  return false;
       return true;
     });
 
     const totalSales    = filtered.reduce((s, b) => s + b.total, 0);
     const totalDiscount = filtered.reduce((s, b) => s + (b.discountAmt || 0), 0);
-    const labels = { today: "Today", yesterday: "Yesterday", month: "This Month", all: "All Time", custom: customDate || "Custom" };
+    const labels = { today: "Today", yesterday: "Yesterday", month: "This Month", all: "All Time", custom: startDate && endDate ? `${startDate} → ${endDate}` : startDate ? `From ${startDate}` : "Custom Range" };
 
     const toggleSelect  = (id) => setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
 
@@ -98,10 +104,18 @@ const deleteAll = () => {
                 {labels[f]}
               </button>
             ))}
-            <input type="date" value={customDate}
-             onChange={(e) => { setCustomDate(e.target.value); setFilter("custom"); onFilterChange("custom", e.target.value); }}
-              style={{ padding: "8px 12px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: `1.5px solid ${filter === "custom" ? "#f59e0b" : "#e5e0d8"}`, background: filter === "custom" ? "#fff8ee" : "#fff", color: "#1a1310", outline: "none" }}
-            />
+           <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 20, border: `1.5px solid ${filter === "custom" ? "#f59e0b" : "#e5e0d8"}`, background: filter === "custom" ? "#fff8ee" : "#fff" }}>
+  <input type="date" value={startDate}
+   onChange={(e) => { setStartDate(e.target.value); setFilter("custom"); onFilterChange("all"); }}
+
+    style={{ border: "none", background: "transparent", fontSize: 12, fontWeight: 700, color: "#1a1310", outline: "none", cursor: "pointer" }}
+  />
+  <span style={{ fontSize: 12, color: "#8a7e6e", fontWeight: 700 }}>→</span>
+  <input type="date" value={endDate}
+    onChange={(e) => { setEndDate(e.target.value); setFilter("custom"); onFilterChange("all"); }}
+    style={{ border: "none", background: "transparent", fontSize: 12, fontWeight: 700, color: "#1a1310", outline: "none", cursor: "pointer" }}
+  />
+</div>
             <div style={{ width: 1, height: 24, background: "#e5e0d8" }} />
             {["ALL", "CASH", "UPI"].map((pm) => (
               <button key={pm} onClick={() => setPayFilter(pm)}
