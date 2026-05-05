@@ -64,18 +64,27 @@
 
     const toggleSelect  = (id) => setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
 
-    const deleteSelected = async () => {
-      if (!selected.length) return;
-      if (!window.confirm(`${selected.length} bills delete karne hain?`)) return;
-      for (const id of selected) await onDelete(id);
-      setSelected([]);
-    };
-
-    const deleteAll = () => {
-      if (!window.confirm("Saari history delete karna chahte ho? Yeh action undo nahi hoga!")) return;
-      onDeleteAll();
-      setSelected([]);
-    };
+   const deleteSelected = async () => {
+  if (!selected.length) return;
+  const pwd = prompt("Delete karne ke liye password daalo:");
+  if (pwd !== "manish123") {
+    if (pwd !== null) alert("❌ Galat password!");
+    return;
+  }
+  if (!window.confirm(`${selected.length} bills delete karne hain?`)) return;
+  for (const id of selected) await onDelete(id);
+  setSelected([]);
+};
+const deleteAll = () => {
+  const pwd = prompt("Delete karne ke liye password daalo:");
+  if (pwd !== "manish123") {
+    if (pwd !== null) alert("❌ Galat password!");
+    return;
+  }
+  if (!window.confirm("Saari history delete karna chahte ho? Yeh action undo nahi hoga!")) return;
+  onDeleteAll();
+  setSelected([]);
+};
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -174,7 +183,14 @@
               <button onClick={() => printBill(b)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e5e0d8", background: "#fff", cursor: "pointer", fontSize: 11, color: "#4a3f35", display: "flex", gap: 4, alignItems: "center" }}>
                 <Icon name="print" size={12} /> Print
               </button>
-              <button onClick={() => { if (window.confirm("Yeh bill delete karein?")) onDelete(b.id); }} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fff", cursor: "pointer", fontSize: 11, color: "#ef4444", display: "flex", gap: 4, alignItems: "center" }}>
+              <button onClick={() => {
+  const pwd = prompt("Delete karne ke liye password daalo:");
+  if (pwd === "manish123") {
+    if (window.confirm("Yeh bill delete karein?")) onDelete(b.id);
+  } else if (pwd !== null) {
+    alert("❌ Galat password!");
+  }
+}}   style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fff", cursor: "pointer", fontSize: 11, color: "#ef4444", display: "flex", gap: 4, alignItems: "center" }}>
                 <Icon name="trash" size={12} /> Delete
               </button>
             </div>

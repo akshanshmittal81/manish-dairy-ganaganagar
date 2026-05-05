@@ -15,7 +15,7 @@ export default function Navbar({ view, setView, onLogout }) {
         <span style={{ fontSize: 22 }}>🥛</span>
         <div>
           <div style={{ fontSize: 16, fontWeight: 900, color: "#f59e0b", letterSpacing: 1, lineHeight: 1 }}>MANISH</div>
-          <div style={{ fontSize: 9, color: "#8a7e6e", letterSpacing: 3, fontWeight: 700, lineHeight: 1 }}>DAIRY</div>
+          <div style={{ fontSize: 9, color: "#8a7e6e", letterSpacing: 2, fontWeight: 700, lineHeight: 1 }}>DAIRY · GANGANAGAR</div>
         </div>
       </div>
       <div style={{ width: 1, height: 32, background: "#2d2420", marginRight: 8 }} />
