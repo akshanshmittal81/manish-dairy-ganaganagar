@@ -4,7 +4,7 @@
   import { exportToExcel } from "../utils/exportExcel";
   import { printBill } from "../utils/printBill";
 
- export default function SalesView({ bills, onDelete, onDeleteAll, onEdit, products, onFilterChange }) {
+ export default function SalesView({ bills, onDelete, onDeleteAll, onEdit, products, onFilterChange, onLoadEdit }) {
     const [filter,      setFilter]      = useState("today");
     const [customDate,  setCustomDate]  = useState("");
     const [selected,    setSelected]    = useState([]);
@@ -168,7 +168,7 @@
                 {(b.paymentMode || "CASH") === "UPI" ? "📲 UPI" : "💵 CASH"}
               </div>
               <div style={{ textAlign: "right" }}>{formatINR(b.total)}</div>
-              <button onClick={() => openEdit(b)} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #2563eb", background: "#eff6ff", cursor: "pointer", fontSize: 11, color: "#2563eb", fontWeight: 700, display: "flex", gap: 4, alignItems: "center" }}>
+              <button onClick={() => onLoadEdit(b)} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #2563eb", background: "#eff6ff", cursor: "pointer", fontSize: 11, color: "#2563eb", fontWeight: 700, display: "flex", gap: 4, alignItems: "center" }}>
                 <Icon name="edit" size={12} /> Edit
               </button>
               <button onClick={() => printBill(b)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e5e0d8", background: "#fff", cursor: "pointer", fontSize: 11, color: "#4a3f35", display: "flex", gap: 4, alignItems: "center" }}>

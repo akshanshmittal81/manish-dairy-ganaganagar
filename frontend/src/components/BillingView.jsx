@@ -6,12 +6,12 @@ import { CAT_ICONS, CAT_COLORS } from "../utils/constants";
 const popBtn = { width: 44, height: 44, borderRadius: 10, border: "1.5px solid #e5e0d8", background: "#f8f5f0", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#4a3f35", flexShrink: 0, fontSize: 18 };
 
 const SIDEBAR_CATS = ["Milk","Dahi","Paneer","Namkeen","Kachori","Sweets","Amul","Snacks","Tandoor","Cookies","Dry Fruit Thal","Other","Gravy Items"];
-
 export default function BillingView({
   products, filtered, bills, category, setCategory, search, setSearch,
   cart, setCart, addToCart, updateQty, setQtyPreset,
   cartTotal, cartSubtotal, discountAmt, discount, setDiscount,
   customerForm, setCustomerForm, checkoutBill, dbCats,
+  editingBillId, onCancelEdit,
 }) {
   const [popup,       setPopup]       = useState(null);
   const [paymentMode, setPaymentMode] = useState("CASH");
@@ -146,6 +146,12 @@ export default function BillingView({
           {cart.length > 0 && <span style={{ marginLeft: "auto", background: "#f59e0b", color: "#1a1310", borderRadius: 999, fontSize: 11, fontWeight: 900, padding: "2px 8px" }}>{cart.length}</span>}
           {heldBills.length > 0 && <span style={{ marginLeft: 4, background: "#ef4444", color: "#fff", borderRadius: 999, fontSize: 11, fontWeight: 900, padding: "2px 8px", cursor: "pointer" }}>⏸️ {heldBills.length}</span>}
         </div>
+        {editingBillId && (
+  <div style={{ padding: "8px 12px", background: "#fef3c7", borderBottom: "1px solid #f59e0b", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <span style={{ fontSize: 11, fontWeight: 800, color: "#92400e" }}>✏️ EDITING: {editingBillId}</span>
+    <button onClick={onCancelEdit} style={{ fontSize: 10, color: "#ef4444", background: "none", border: "none", cursor: "pointer", fontWeight: 700 }}>✕ Cancel</button>
+  </div>
+)}
 
         {/* Held Bills */}
         {heldBills.length > 0 && (
@@ -215,7 +221,7 @@ export default function BillingView({
                 ⏸️ Hold
               </button>
               <button onClick={() => checkoutBill(paymentMode)} style={{ flex: 1, height: 42, borderRadius: 10, background: "#1a1310", color: "#f59e0b", border: "none", fontWeight: 800, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <Icon name="print" size={15} /> Print & Save
+              <Icon name="print" size={15} /> {editingBillId ? "💾 Update Bill" : "Print & Save"}
               </button>
             </div>
             {customerForm.phone && (

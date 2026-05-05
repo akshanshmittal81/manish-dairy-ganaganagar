@@ -24,6 +24,7 @@ export default function App() {
   const [search,       setSearch]       = useState("");
   const [customerForm, setCustomerForm] = useState({ name: "", phone: "" });
   const [discount,     setDiscount]     = useState(0);
+  const [editingBillId, setEditingBillId] = useState(null);
 
   // ─── Admin shortcut: Ctrl+Shift+D ─────────────────────────────────────────
   useEffect(() => {
@@ -106,7 +107,20 @@ export default function App() {
 
   // ─── Checkout ──────────────────────────────────────────────────────────────
   const checkoutBill = async (paymentMode = "CASH") => {
-    if (!cart.length) return;
+  if (!cart.length) return;
+
+  // Editing mode — bill update karo
+  if (editingBillId) {
+    const ok = await handleEditBill(editingBillId, cart, discount);
+    if (ok) {
+      setCart([]);
+      setCustomerForm({ name: "", phone: "" });
+      setDiscount(0);
+      setEditingBillId(null);
+      setView("sales");
+    }
+    return;
+  }
     const { printBill } = await import("./utils/printBill");
     const bill = {
       id: "MD" + String(Date.now()).slice(-4),
@@ -230,6 +244,14 @@ export default function App() {
       return false;
     }
   };
+  // ─── Load bill into cart for editing ──────────────────────────────────────
+const loadBillIntoCart = (bill) => {
+  setCart(bill.items.map(i => ({ ...i })));
+  setCustomerForm({ name: bill.customer?.name || "", phone: bill.customer?.phone || "" });
+  setDiscount(bill.discountPct || 0);
+  setEditingBillId(bill.id);
+  setView("billing");
+};
 
   // ─── Auth / Loading / Error screens ───────────────────────────────────────
   if (!token) return <Login onLogin={(t) => setToken(t)} />;
@@ -266,8 +288,10 @@ export default function App() {
 
       <div style={{ padding: "24px", maxWidth: 1400, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
         {view === "billing" && (
-          <BillingView
-            products={products} filtered={filtered} bills={bills}
+  <BillingView
+    products={products} filtered={filtered} bills={bills}
+    editingBillId={editingBillId}
+    onCancelEdit={() => { setEditingBillId(null); setCart([]); setView("sales"); }}
             category={category} setCategory={setCategory}
             search={search} setSearch={setSearch}
             cart={cart} setCart={setCart}
@@ -289,6 +313,7 @@ export default function App() {
     bills={bills} onDelete={handleDeleteBill} onDeleteAll={handleDeleteAllBills}
     onEdit={handleEditBill} products={products}
     onFilterChange={fetchBillsForFilter}
+    onLoadEdit={loadBillIntoCart}
   />
 )}
         {view === "analytics" && <AnalyticsView bills={bills} />}
