@@ -123,7 +123,7 @@ export default function App() {
   }
     const { printBill } = await import("./utils/printBill");
     const bill = {
-      id: "MD" + String(Date.now()).slice(-4),
+      id: "MD" + String(Date.now()).slice(-5),
       date: new Date().toISOString(),
       items: cart,
       subtotal: Math.round(cartSubtotal),
