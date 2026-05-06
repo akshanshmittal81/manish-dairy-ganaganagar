@@ -38,8 +38,8 @@ export default function Navbar({ view, setView, onLogout }) {
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: 16, padding: "14px 0" }}>
           <span style={{ fontSize: 22 }}>🥛</span>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 900, color: "#f59e0b", letterSpacing: 1, lineHeight: 1 }}>MANISH</div>
-            <div style={{ fontSize: 9, color: "#8a7e6e", letterSpacing: 2, fontWeight: 700, lineHeight: 1 }}>DAIRY · GANGANAGAR</div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: "#f59e0b", letterSpacing: 2, lineHeight: 1 }}>MANISH DAIRY</div>
+<div style={{ fontSize: 11, color: "#c9b9a8", letterSpacing: 2, fontWeight: 600, lineHeight: 1, marginTop: 5 }}>GANGANAGAR</div>
           </div>
         </div>
         <div style={{ width: 1, height: 32, background: "#2d2420", marginRight: 8 }} />
