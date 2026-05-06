@@ -187,15 +187,18 @@ export default function App() {
     }
   };
 
-  // ─── Bill CRUD ─────────────────────────────────────────────────────────────
-  const handleDeleteBill = async (id) => {
-    try {
-      await apiCall(`/bills/${id}`, "DELETE");
-      setBills((prev) => prev.filter((b) => b.id !== id));
-    } catch (e) {
-      alert("Bill delete karne mein error: " + e.message);
-    }
-  };
+const handleDeleteBill = async (id) => {
+  // Pehle UI se hata do (optimistic)
+  setBills((prev) => prev.filter((b) => b.id !== id));
+  try {
+    await apiCall(`/bills/${id}`, "DELETE");
+  } catch (e) {
+    // Agar error aaye toh wapas add karo
+    const bls = await apiCall("/bills");
+    setBills(bls);
+    alert("Bill delete karne mein error: " + e.message);
+  }
+};
 
   const handleDeleteAllBills = async () => {
     try {

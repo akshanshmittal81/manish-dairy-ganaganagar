@@ -33,7 +33,7 @@ router.get("/", async (req, res) => {
       filter["customer.phone"] = req.query.phone;
     }
 
-    const bills = await Bill.find(filter).sort({ date: -1 });
+    const bills = await Bill.find(filter).sort({ date: -1 }).lean();
 
     res.json(bills); // ✅ BAS YEHI
   } catch (err) {
