@@ -53,7 +53,7 @@ export default function App() {
         setLoading(true);
         const [prods, bls, custs, cats] = await Promise.all([
           apiCall("/products"),
-         apiCall("/bills?date=" + new Date().toISOString().slice(0, 10)),
+        apiCall("/bills"), 
           apiCall("/customers"),
           apiCall("/categories"),
         ]);
@@ -219,11 +219,10 @@ export default function App() {
     } else if (filterType === "month") {
       const m = new Date().toISOString().slice(0, 7);
       url = `/bills?month=${m}`;
-    } else if (filterType === "custom" && customDate) {
-      url = `/bills?date=${customDate}`;
     } else if (filterType === "all") {
-      url = `/bills`; // no limit ab backend mein
+      url = `/bills`;
     }
+    // custom ke liye kuch mat karo — frontend filter karega
 
     const bls = await apiCall(url);
     setBills(bls);

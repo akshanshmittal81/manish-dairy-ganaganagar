@@ -15,6 +15,12 @@ router.get("/", async (req, res) => {
       end.setDate(end.getDate() + 1);
       filter.date = { $gte: start, $lt: end };
     }
+    if (req.query.startDate && req.query.endDate) {
+  const start = new Date(req.query.startDate);
+  const end = new Date(req.query.endDate);
+  end.setDate(end.getDate() + 1);
+  filter.date = { $gte: start, $lt: end };
+}
 
     if (req.query.month) {
       const [year, month] = req.query.month.split("-").map(Number);
