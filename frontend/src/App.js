@@ -117,6 +117,7 @@ export default function App() {
       setCart([]);
       setCustomerForm({ name: "", phone: "" });
       setDiscount(0);
+      setCategory("Milk");
       setEditingBillId(null);
       setView("sales");
     }
@@ -147,6 +148,7 @@ export default function App() {
       setCart([]);
       setCustomerForm({ name: "", phone: "" });
       setDiscount(0);
+      setCategory("Milk");
     } catch (e) {
       alert("Bill save karne mein error: " + e.message);
     }
