@@ -7,6 +7,7 @@ import SalesView from "./components/SalesView";
 import AnalyticsView from "./components/AnalyticsView";
 import CustomersView from "./components/CustomersView";
 import { apiCall } from "./utils/api";
+import LicenseGate from "./LicenseGate";
 
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem("dairy_token"));
@@ -278,8 +279,10 @@ const loadBillIntoCart = (bill) => {
       </div>
     );
 
+
   // ─── Main Layout ───────────────────────────────────────────────────────────
   return (
+    <LicenseGate>
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: "#f8f5f0", fontFamily: "'Segoe UI', sans-serif" }}>
       <div style={{ backgroundColor: "#1a1310", color: "#f5f0eb", textAlign: "center", padding: "14px", fontSize: "13px" }}>
         Developed by <strong style={{ color: "#f59e0b" }}>Aniket Kansal</strong> &amp; <strong style={{ color: "#f59e0b" }}>Akshansh Mittal</strong>
@@ -324,5 +327,6 @@ const loadBillIntoCart = (bill) => {
         )}
       </div>
     </div>
+    </LicenseGate>
   );
 }
