@@ -20,6 +20,7 @@ const icons = {
   tag: "M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z M7 7h.01",
   save: "M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z M17 21v-8H7v8 M7 3v5h8",
   menu: "M3 12h18 M3 6h18 M3 18h18",
+  "arrow-left": "M19 12H5 M12 19l-7-7 7-7",
 };
 
 export default function Icon({ name, size = 18 }) {

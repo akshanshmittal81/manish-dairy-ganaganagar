@@ -7,6 +7,7 @@ import SalesView from "./components/SalesView";
 import AnalyticsView from "./components/AnalyticsView";
 import CustomersView from "./components/CustomersView";
 import { apiCall } from "./utils/api";
+import { today } from "./utils/helpers";
 import LicenseGate from "./LicenseGate";
 
 export default function App() {
@@ -26,6 +27,8 @@ export default function App() {
   const [customerForm, setCustomerForm] = useState({ name: "", phone: "" });
   const [discount,     setDiscount]     = useState(0);
   const [editingBillId, setEditingBillId] = useState(null);
+  const [heldBills, setHeldBills] = useState([]);
+const [holdCounter, setHoldCounter] = useState(1);
 
   // ─── Admin shortcut: Ctrl+Shift+D ─────────────────────────────────────────
   useEffect(() => {
@@ -52,16 +55,15 @@ export default function App() {
     async function loadAll() {
       try {
         setLoading(true);
-        const [prods, bls, custs, cats] = await Promise.all([
+      const [prods, cats] = await Promise.all([
           apiCall("/products"),
-        apiCall("/bills"), 
-          apiCall("/customers"),
           apiCall("/categories"),
         ]);
         setProducts(prods);
-        setBills(bls);
-        setCustomers(custs);
         setDbCats(cats);
+        // Bills aur customers background mein load karo
+        apiCall("/bills?month=" + today().slice(0, 7)).then(bls => setBills(bls)).catch(() => {});
+        apiCall("/customers").then(custs => setCustomers(custs)).catch(() => {});
       } catch (e) {
         setError("Server se connect nahi ho paya. Backend chal raha hai? " + e.message);
       } finally {
@@ -293,7 +295,11 @@ const loadBillIntoCart = (bill) => {
 
       <Navbar view={view} setView={setView} onLogout={() => { localStorage.clear(); setToken(null); }} />
 
-      <div style={{ padding: "24px", maxWidth: 1400, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
+      <div style={{padding: window.innerWidth < 768 ? "12px 8px" : "24px",
+          maxWidth: 1400,
+          margin: "0 auto",
+          width: "100%",
+          boxSizing: "border-box", }}>
         {view === "billing" && (
   <BillingView
     products={products} filtered={filtered} bills={bills}
@@ -307,6 +313,10 @@ const loadBillIntoCart = (bill) => {
             discountAmt={discountAmt} discount={discount} setDiscount={setDiscount}
             customerForm={customerForm} setCustomerForm={setCustomerForm}
             checkoutBill={checkoutBill} dbCats={dbCats}
+              heldBills={heldBills}
+  setHeldBills={setHeldBills}
+  holdCounter={holdCounter}
+  setHoldCounter={setHoldCounter}
           />
         )}
         {view === "products" && (

@@ -1,11 +1,22 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Icon from "./Icon";
 import { formatINR, formatDate, formatTime, formatQty, today, thisMonth } from "../utils/helpers";
 import { CAT_COLORS } from "../utils/constants";
 import { printBill } from "../utils/printBill";
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return isMobile;
+}
+
 export default function AnalyticsView({ bills }) {
   const [selectedDate, setSelectedDate] = useState(today());
+  const mobile = useIsMobile();
 
   const filteredBills = selectedDate
     ? bills.filter((b) => b.date?.slice(0, 10) === selectedDate)
@@ -56,22 +67,25 @@ export default function AnalyticsView({ bills }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+
+      {/* ─── Stats Cards ─── */}
+      <div style={{ display: "grid", gridTemplateColumns: mobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: mobile ? 10 : 16 }}>
         {[
           { label: "Today Sales",  value: formatINR(todaySales),  color: "#2563eb", sub: `${todayBills.length} bills` },
           { label: "Today Profit", value: "₹0.00",                color: "#16a34a", sub: `${todaySales > 0 ? Math.round((todayProfit / todaySales) * 100) : 0}% margin` },
           { label: "Total Sales",  value: formatINR(totalSales),  color: "#7c3aed", sub: `${bills.length} bills ever` },
           { label: "Total Profit", value: "₹0.00",                color: "#ea580c", sub: `${totalSales > 0 ? Math.round((totalProfit / totalSales) * 100) : 0}% margin` },
         ].map((k) => (
-          <div key={k.label} style={{ background: "#fff", borderRadius: 16, padding: "20px", border: "1px solid #e5e0d8" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#8a7e6e", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>{k.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 900, color: k.color, marginBottom: 4 }}>{k.value}</div>
-            <div style={{ fontSize: 12, color: "#8a7e6e" }}>{k.sub}</div>
+          <div key={k.label} style={{ background: "#fff", borderRadius: 16, padding: mobile ? "14px" : "20px", border: "1px solid #e5e0d8" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#8a7e6e", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>{k.label}</div>
+            <div style={{ fontSize: mobile ? 18 : 22, fontWeight: 900, color: k.color, marginBottom: 4 }}>{k.value}</div>
+            <div style={{ fontSize: 11, color: "#8a7e6e" }}>{k.sub}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+      {/* ─── Charts ─── */}
+      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 24 }}>
         <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", padding: 20 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: "#1a1310", marginBottom: 16 }}>📅 This Month – Daily Sales</div>
           {dailyData.length === 0 && <div style={{ color: "#c9b9a8", textAlign: "center", padding: "30px 0" }}>No data yet</div>}
@@ -110,17 +124,19 @@ export default function AnalyticsView({ bills }) {
         </div>
       </div>
 
+      {/* ─── Recent Bills ─── */}
       <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", overflow: "hidden" }}>
         <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e0d8", fontSize: 14, fontWeight: 800, color: "#1a1310" }}>🧾 Recent Bills</div>
         {bills.slice(0, 20).map((b, i) => (
-          <div key={b.id} style={{ display: "flex", alignItems: "center", padding: "12px 20px", borderTop: i > 0 ? "1px solid #f0ebe4" : "none", gap: 16 }}>
-            <div style={{ flex: 1 }}>
+          <div key={b.id} style={{ display: "flex", alignItems: "center", padding: mobile ? "10px 14px" : "12px 20px", borderTop: i > 0 ? "1px solid #f0ebe4" : "none", gap: mobile ? 10 : 16, flexWrap: mobile ? "wrap" : "nowrap" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1310" }}>MD{b.id.slice(-4)}</div>
               <div style={{ fontSize: 11, color: "#8a7e6e" }}>{formatDate(b.date)} {formatTime(b.date)} · {b.items?.length} items</div>
+              {mobile && b.customer?.name && <div style={{ fontSize: 11, color: "#4a3f35", marginTop: 2 }}>👤 {b.customer.name}</div>}
             </div>
-            {b.customer?.name && <div style={{ fontSize: 12, color: "#4a3f35" }}>👤 {b.customer.name}</div>}
-            <div style={{ fontSize: 14, fontWeight: 800, color: "#2563eb" }}>{formatINR(b.total)}</div>
-            <button onClick={() => printBill(b)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e5e0d8", background: "#fff", cursor: "pointer", fontSize: 11, color: "#4a3f35", display: "flex", gap: 4, alignItems: "center" }}>
+            {!mobile && b.customer?.name && <div style={{ fontSize: 12, color: "#4a3f35" }}>👤 {b.customer.name}</div>}
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#2563eb", flexShrink: 0 }}>{formatINR(b.total)}</div>
+            <button onClick={() => printBill(b)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e5e0d8", background: "#fff", cursor: "pointer", fontSize: 11, color: "#4a3f35", display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
               <Icon name="print" size={12} /> Print
             </button>
           </div>
@@ -128,28 +144,29 @@ export default function AnalyticsView({ bills }) {
         {bills.length === 0 && <div style={{ textAlign: "center", color: "#c9b9a8", padding: "30px 0" }}>No bills yet. Start billing!</div>}
       </div>
 
+      {/* ─── Date-wise Item Report ─── */}
       <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", padding: 20 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: mobile ? "flex-start" : "center", flexDirection: mobile ? "column" : "row", gap: mobile ? 10 : 0, marginBottom: 16 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: "#1a1310" }}>📦 Date-wise Item Report</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e5e0d8", fontSize: 13, outline: "none" }} />
             <button onClick={() => setSelectedDate(today())} style={{ padding: "6px 12px", borderRadius: 8, background: "#1a1310", color: "#f59e0b", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Today</button>
             <button onClick={() => setSelectedDate("")} style={{ padding: "6px 12px", borderRadius: 8, background: "#f0ebe4", color: "#4a3f35", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>All Time</button>
           </div>
         </div>
-        <div style={{ background: "#fff8ee", borderRadius: 10, padding: "10px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
+        <div style={{ background: "#fff8ee", borderRadius: 10, padding: "10px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: "#92400e" }}>
             {selectedDate ? `📅 ${selectedDate}` : "📊 All Time"} — {filteredBills.length} bills
           </span>
           <span style={{ fontSize: 14, fontWeight: 900, color: "#2563eb" }}>{formatINR(filteredTotal)}</span>
         </div>
         {filteredItemData.length === 0 && <div style={{ color: "#c9b9a8", textAlign: "center", padding: "20px 0" }}>Is date koi sale nahi</div>}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: mobile ? "repeat(2, 1fr)" : "repeat(auto-fill, minmax(200px, 1fr))", gap: mobile ? 10 : 12 }}>
           {filteredItemData.map(([name, v]) => (
-            <div key={name} style={{ background: "#f8f5f0", borderRadius: 12, padding: "14px 16px", border: "1px solid #e5e0d8" }}>
-              <div style={{ fontSize: 11, color: CAT_COLORS[v.category] || "#8a7e6e", fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>{v.category}</div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: "#1a1310", marginBottom: 6 }}>{name}</div>
-              <div style={{ fontSize: 20, fontWeight: 900, color: CAT_COLORS[v.category] || "#f59e0b" }}>{formatQty(v.qty, v.unit)}</div>
+            <div key={name} style={{ background: "#f8f5f0", borderRadius: 12, padding: mobile ? "12px" : "14px 16px", border: "1px solid #e5e0d8" }}>
+              <div style={{ fontSize: 10, color: CAT_COLORS[v.category] || "#8a7e6e", fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>{v.category}</div>
+              <div style={{ fontSize: mobile ? 13 : 14, fontWeight: 800, color: "#1a1310", marginBottom: 6, lineHeight: 1.3 }}>{name}</div>
+              <div style={{ fontSize: mobile ? 17 : 20, fontWeight: 900, color: CAT_COLORS[v.category] || "#f59e0b" }}>{formatQty(v.qty, v.unit)}</div>
               <div style={{ fontSize: 12, color: "#16a34a", fontWeight: 700, marginTop: 4 }}>{formatINR(v.revenue)}</div>
               <div style={{ fontSize: 11, color: "#8a7e6e" }}>Total sold · Total amount</div>
             </div>
