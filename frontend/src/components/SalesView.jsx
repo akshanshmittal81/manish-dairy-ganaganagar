@@ -132,7 +132,7 @@ const deleteAll = () => {
               🗑️ Delete All
             </button>
           </div>
-          <button onClick={() => exportToExcel(filtered, filter)} style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid #16a34a", background: "#f0fdf4", color: "#16a34a" }}>
+          <button onClick={() => exportToExcel(filtered, filter === "today" ? today() : filter === "yesterday" ? new Date(Date.now() - 86400000).toISOString().slice(0, 10) : filter === "month" ? thisMonth() : filter === "custom" && startDate ? `${startDate}_${endDate || startDate}` : "all")} style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid #16a34a", background: "#f0fdf4", color: "#16a34a" }}>
             📊 Export Excel
           </button>
         </div>
