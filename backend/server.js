@@ -2,7 +2,7 @@ const express = require("express");
 const Bill = require("./models/Bill");
 const mongoose = require("mongoose");
 const cors = require("cors");
-const licenseRoutes = require("./routes/license");
+
 
 require("dotenv").config();
 
