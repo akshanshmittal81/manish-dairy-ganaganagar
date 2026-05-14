@@ -8,7 +8,6 @@ import AnalyticsView from "./components/AnalyticsView";
 import CustomersView from "./components/CustomersView";
 import { apiCall } from "./utils/api";
 import { today } from "./utils/helpers";
-import LicenseGate from "./LicenseGate";
 
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem("dairy_token"));
