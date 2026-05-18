@@ -285,12 +285,9 @@ const loadBillIntoCart = (bill) => {
 
   // ─── Main Layout ───────────────────────────────────────────────────────────
   return (
-    
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: "#f8f5f0", fontFamily: "'Segoe UI', sans-serif" }}>
-      <div style={{ backgroundColor: "#1a1310", color: "#f5f0eb", textAlign: "center", padding: "14px", fontSize: "13px" }}>
-        Developed by <strong style={{ color: "#f59e0b" }}>Aniket Kansal</strong> &amp; <strong style={{ color: "#f59e0b" }}>Akshansh Mittal</strong>
-        &nbsp;|&nbsp; 📞 +91-8126700718 &amp; +91-8766392706
-      </div>
+    
+    
 
       <Navbar view={view} setView={setView} onLogout={() => { localStorage.clear(); setToken(null); }} />
 
