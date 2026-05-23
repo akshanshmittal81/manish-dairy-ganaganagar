@@ -16,11 +16,11 @@ router.get("/", async (req, res) => {
       filter.date = { $gte: start, $lt: end };
     }
     if (req.query.startDate && req.query.endDate) {
-  const start = new Date(req.query.startDate);
-  const end = new Date(req.query.endDate);
-  end.setDate(end.getDate() + 1);
-  filter.date = { $gte: start, $lt: end };
-}
+      const start = new Date(req.query.startDate);
+      const end = new Date(req.query.endDate);
+      end.setDate(end.getDate() + 1);
+      filter.date = { $gte: start, $lt: end };
+    }
 
     if (req.query.month) {
       const [year, month] = req.query.month.split("-").map(Number);
@@ -35,13 +35,13 @@ router.get("/", async (req, res) => {
 
     const bills = await Bill.find(filter).sort({ date: -1 }).lean();
 
-    res.json(bills); // ✅ BAS YEHI
+    res.json(bills);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/bills — naya bill banao + customer update karo
+// POST /api/bills — naya bill banao
 router.post("/", async (req, res) => {
   try {
     const items = Array.isArray(req.body.items) ? req.body.items : [];
@@ -55,8 +55,17 @@ router.post("/", async (req, res) => {
     const total  = subtotal - discountAmt;
     const profit = total - cost;
 
+    // ✅ Counter-based ID — last bill se +1
+    const lastBill = await Bill.findOne().sort({ _id: -1 });
+    let newNumber = 9700; // fallback
+    if (lastBill && lastBill.id) {
+      const lastNum = parseInt(lastBill.id.replace("MD", ""));
+      if (!isNaN(lastNum)) newNumber = lastNum + 1;
+    }
+    const billId = "MD" + String(newNumber).padStart(4, "0");
+
     const billData = {
-      id: "MD" + String(Date.now()).slice(-5),
+      id: billId,
       date: new Date(),
 
       items,
@@ -67,7 +76,7 @@ router.post("/", async (req, res) => {
       cost,
       profit,
 
-      discountApplied: false, // 🔥 IMPORTANT
+      discountApplied: false,
 
       paymentMode: req.body.paymentMode || "CASH",
 
@@ -87,8 +96,8 @@ router.post("/", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // POST /api/bills/apply-discount
-// POST /api/bills — naya bill save karo
 router.post("/apply-discount", async (req, res) => {
   try {
     const { discount } = req.body;
@@ -144,6 +153,7 @@ router.post("/apply-discount", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // GET /api/bills/analytics — analytics data
 router.get("/analytics", async (req, res) => {
   try {
@@ -156,8 +166,6 @@ router.get("/analytics", async (req, res) => {
     bills.forEach((b) => {
       const day = b.date.toISOString().slice(0, 10);
       if (!dailyMap[day]) dailyMap[day] = { date: day, revenue: 0, profit: 0, bills: 0 };
-
-      // ✅ direct use karo (NO discount here)
       dailyMap[day].revenue += b.total;
       dailyMap[day].profit += b.profit;
       dailyMap[day].bills += 1;
@@ -237,6 +245,7 @@ router.put("/:id", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // DELETE /api/bills/:id — single bill delete karo
 router.delete("/:id", async (req, res) => {
   try {
@@ -246,6 +255,7 @@ router.delete("/:id", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // GET /api/bills/:id — single bill
 router.get("/:id", async (req, res) => {
   try {
