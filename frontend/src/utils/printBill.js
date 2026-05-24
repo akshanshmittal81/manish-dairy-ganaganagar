@@ -70,5 +70,5 @@ w.document.close();
   setTimeout(() => {
     w.print();
     w.close();
-  }, 500);
+  }, 100);
 }
