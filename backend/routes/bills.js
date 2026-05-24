@@ -59,7 +59,18 @@ router.post("/", async (req, res) => {
  // Sabse bada ID number dhundo
 const allBills = await Bill.find({}, {id: 1}).lean();
 const maxBill = await Bill.aggregate([
-  { $project: { num: { $toInt: { $substr: ["$id", 2, -1] } } } },
+  {
+    $project: {
+      num: {
+        $convert: {
+          input: { $substr: ["$id", 2, -1] },
+          to: "long",
+          onError: 0,
+          onNull: 0
+        }
+      }
+    }
+  },
   { $sort: { num: -1 } },
   { $limit: 1 }
 ]);
