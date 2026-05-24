@@ -59,6 +59,7 @@ router.post("/", async (req, res) => {
  // Sabse bada ID number dhundo
 const allBills = await Bill.find({}, {id: 1}).lean();
 const maxNum = allBills.reduce((max, b) => {
+  if (!b.id) return max;
   const num = parseInt(b.id.replace("MD", ""));
   return isNaN(num) ? max : Math.max(max, num);
 }, 100000);
