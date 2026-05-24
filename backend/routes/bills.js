@@ -56,14 +56,20 @@ router.post("/", async (req, res) => {
     const profit = total - cost;
 
     // ✅ Counter-based ID — last bill se +1
+ let billId;
+let attempts = 0;
+while (attempts < 10) {
   const lastBill = await Bill.findOne().sort({ createdAt: -1 });
-let newNumber = 10925; // MD10924 ke baad
-if (lastBill && lastBill.id) {
-  const lastNum = parseInt(lastBill.id.replace("MD", ""));
-  if (!isNaN(lastNum)) newNumber = lastNum + 1;
+  let newNumber = 10930;
+  if (lastBill && lastBill.id) {
+    const lastNum = parseInt(lastBill.id.replace("MD", ""));
+    if (!isNaN(lastNum)) newNumber = lastNum + 1;
+  }
+  billId = "MD" + String(newNumber).padStart(4, "0");
+  const exists = await Bill.findOne({ id: billId });
+  if (!exists) break;
+  attempts++;
 }
-const billId = "MD" + String(newNumber).padStart(4, "0");
-
     const billData = {
       id: billId,
       date: new Date(),
