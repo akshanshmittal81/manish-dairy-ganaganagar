@@ -60,7 +60,7 @@ router.post("/", async (req, res) => {
 let attempts = 0;
 while (attempts < 10) {
   const lastBill = await Bill.findOne().sort({ createdAt: -1 });
-  let newNumber = 10928;
+let newNumber = 99998;
   if (lastBill && lastBill.id) {
     const lastNum = parseInt(lastBill.id.replace("MD", ""));
     if (!isNaN(lastNum)) newNumber = lastNum + 1;
