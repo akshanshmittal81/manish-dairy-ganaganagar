@@ -56,13 +56,13 @@ router.post("/", async (req, res) => {
     const profit = total - cost;
 
     // ✅ Counter-based ID — last bill se +1
-    const lastBill = await Bill.findOne().sort({ _id: -1 });
-    let newNumber = 9700; // fallback
-    if (lastBill && lastBill.id) {
-      const lastNum = parseInt(lastBill.id.replace("MD", ""));
-      if (!isNaN(lastNum)) newNumber = lastNum + 1;
-    }
-    const billId = "MD" + String(newNumber).padStart(4, "0");
+  const lastBill = await Bill.findOne().sort({ createdAt: -1 });
+let newNumber = 10925; // MD10924 ke baad
+if (lastBill && lastBill.id) {
+  const lastNum = parseInt(lastBill.id.replace("MD", ""));
+  if (!isNaN(lastNum)) newNumber = lastNum + 1;
+}
+const billId = "MD" + String(newNumber).padStart(4, "0");
 
     const billData = {
       id: billId,
