@@ -58,11 +58,12 @@ router.post("/", async (req, res) => {
     // ✅ Counter-based ID — last bill se +1
  // Sabse bada ID number dhundo
 const allBills = await Bill.find({}, {id: 1}).lean();
-const maxNum = allBills.reduce((max, b) => {
-  if (!b.id) return max;
-  const num = parseInt(b.id.replace("MD", ""));
-  return isNaN(num) ? max : Math.max(max, num);
-}, 100000);
+const maxBill = await Bill.aggregate([
+  { $project: { num: { $toInt: { $substr: ["$id", 2, -1] } } } },
+  { $sort: { num: -1 } },
+  { $limit: 1 }
+]);
+const maxNum = maxBill.length > 0 ? maxBill[0].num : 100000;
 const billId = "MD" + String(maxNum + 1);
     const billData = {
       id: billId,
