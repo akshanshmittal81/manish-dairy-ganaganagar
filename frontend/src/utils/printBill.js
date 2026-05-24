@@ -65,12 +65,10 @@ export function printBill(bill) {
   <div class="footer">Thank you!! Please Visit Again!</div>
   <br/>
   </body></html>`);
-  w.document.close();
-  w.onload = () => {
+w.document.close();
+  
+  setTimeout(() => {
     w.print();
     w.close();
-  };
-  setTimeout(() => {
-    if (!w.closed) { w.print(); w.close(); }
-  }, 800);
+  }, 500);
 }
