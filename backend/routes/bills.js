@@ -57,13 +57,12 @@ router.post("/", async (req, res) => {
 
     // ✅ Counter-based ID — last bill se +1
  // Sabse bada ID number dhundo
-const maxBill = await Bill.findOne().sort({ id: -1 });
-let newNumber = 99998;
-if (maxBill && maxBill.id) {
-  const lastNum = parseInt(maxBill.id.replace("MD", ""));
-  if (!isNaN(lastNum) && lastNum >= 99998) newNumber = lastNum + 1;
-}
-const billId = "MD" + String(newNumber);
+const allBills = await Bill.find({}, {id: 1}).lean();
+const maxNum = allBills.reduce((max, b) => {
+  const num = parseInt(b.id.replace("MD", ""));
+  return isNaN(num) ? max : Math.max(max, num);
+}, 100000);
+const billId = "MD" + String(maxNum + 1);
     const billData = {
       id: billId,
       date: new Date(),
