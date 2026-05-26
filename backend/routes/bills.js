@@ -47,35 +47,35 @@ router.post("/", async (req, res) => {
     const items = Array.isArray(req.body.items) ? req.body.items : [];
 
     const subtotal = items.reduce((sum, i) => sum + (i.price * i.qty), 0);
-    const cost     = items.reduce((sum, i) => sum + (i.cost * i.qty), 0);
+    const cost = items.reduce((sum, i) => sum + (i.cost * i.qty), 0);
 
     const discountPct = Number(req.body.discountPct) || 0;
     const discountAmt = (subtotal * discountPct) / 100;
 
-    const total  = subtotal - discountAmt;
+    const total = subtotal - discountAmt;
     const profit = total - cost;
 
     // ✅ Counter-based ID — last bill se +1
- // Sabse bada ID number dhundo
-const allBills = await Bill.find({}, {id: 1}).lean();
-const maxBill = await Bill.aggregate([
-  {
-    $project: {
-      num: {
-        $convert: {
-          input: { $substr: ["$id", 2, -1] },
-          to: "long",
-          onError: 0,
-          onNull: 0
+    // Sabse bada ID number dhundo
+    const allBills = await Bill.find({}, { id: 1 }).lean();
+    const maxBill = await Bill.aggregate([
+      {
+        $project: {
+          num: {
+            $convert: {
+              input: { $substr: ["$id", 2, -1] },
+              to: "long",
+              onError: 0,
+              onNull: 0
+            }
+          }
         }
-      }
-    }
-  },
-  { $sort: { num: -1 } },
-  { $limit: 1 }
-]);
-const maxNum = maxBill.length > 0 ? maxBill[0].num : 100000;
-const billId = "MD" + String(maxNum + 1);
+      },
+      { $sort: { num: -1 } },
+      { $limit: 1 }
+    ]);
+    const maxNum = maxBill.length > 0 ? maxBill[0].num : 100000;
+    const billId = "MD" + String(maxNum + 1);
     const billData = {
       id: billId,
       date: new Date(),
@@ -136,11 +136,11 @@ router.post("/apply-discount", async (req, res) => {
         };
       });
 
-      const newSubtotal  = +newItems.reduce((s, i) => s + i.total, 0).toFixed(2);
+      const newSubtotal = +newItems.reduce((s, i) => s + i.total, 0).toFixed(2);
       const newCostTotal = +newItems.reduce((s, i) => s + i.cost * i.qty, 0).toFixed(2);
       const newDiscountAmt = +(newSubtotal * (bill.discountPct || 0) / 100).toFixed(2);
-      const newTotal     = +(newSubtotal - newDiscountAmt).toFixed(2);
-      const newProfit    = +(newTotal - newCostTotal).toFixed(2);
+      const newTotal = +(newSubtotal - newDiscountAmt).toFixed(2);
+      const newProfit = +(newTotal - newCostTotal).toFixed(2);
 
       await Bill.updateOne(
         { _id: bill._id },
@@ -237,19 +237,19 @@ router.put("/:id", async (req, res) => {
 
     const items = Array.isArray(req.body.items) ? req.body.items : bill.items;
     const subtotal = items.reduce((sum, i) => sum + (i.price * i.qty), 0);
-    const cost     = items.reduce((sum, i) => sum + (i.cost * i.qty), 0);
+    const cost = items.reduce((sum, i) => sum + (i.cost * i.qty), 0);
     const discountPct = Number(req.body.discountPct) ?? bill.discountPct;
     const discountAmt = (subtotal * discountPct) / 100;
-    const total  = subtotal - discountAmt;
+    const total = subtotal - discountAmt;
     const profit = total - cost;
 
-    bill.items       = items;
-    bill.subtotal    = subtotal;
+    bill.items = items;
+    bill.subtotal = subtotal;
     bill.discountPct = discountPct;
     bill.discountAmt = discountAmt;
-    bill.total       = total;
-    bill.cost        = cost;
-    bill.profit      = profit;
+    bill.total = total;
+    bill.cost = cost;
+    bill.profit = profit;
 
     await bill.save();
     res.json(bill);
