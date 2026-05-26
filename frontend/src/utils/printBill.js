@@ -1,8 +1,7 @@
 import { formatDate, formatTime, formatQty } from "./helpers";
 
 export function printBill(bill) {
-  const w = window.open("", "_blank", "width=302,height=600");
-  w.document.write(`<!DOCTYPE html><html><head><style>
+  const printContent = `<!DOCTYPE html><html><head><style>
     @page { margin: 0; size: 80mm auto; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Courier New', monospace; font-size: 13px; width: 80mm; padding: 4mm; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -64,11 +63,27 @@ export function printBill(bill) {
   <div class="divider-dash"></div>
   <div class="footer">Thank you!! Please Visit Again!</div>
   <br/>
-  </body></html>`);
-w.document.close();
+  </body></html>`;
+
+  // Method 1: Try popup first
+  const w = window.open("", "_blank", "width=302,height=600");
   
-  setTimeout(() => {
-    w.print();
-    w.close();
-  }, 100);
+  if (w && !w.closed) {
+    // Popup allowed ✅
+    w.document.write(printContent);
+    w.document.close();
+    setTimeout(() => { w.print(); w.close(); }, 300);
+  } else {
+    // Popup blocked — use iframe fallback ✅
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:302px;height:600px;border:none;";
+    document.body.appendChild(iframe);
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(printContent);
+    iframe.contentDocument.close();
+    setTimeout(() => {
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 1000);
+    }, 300);
+  }
 }
