@@ -33,9 +33,7 @@ router.get("/", async (req, res) => {
       filter["customer.phone"] = req.query.phone;
     }
 
-    const limit = req.query.limit ? parseInt(req.query.limit) : 500;
 const bills = await Bill.find(filter).sort({ date: -1 }).lean();
-
     res.json(bills);
   } catch (err) {
     res.status(500).json({ error: err.message });
