@@ -229,7 +229,7 @@ const handleDeleteBill = async (id) => {
       const m = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }).slice(0, 7);
       url = `/bills?month=${m}`;
     } else if (filterType === "all") {
-      url = `/bills?limit=200`; // ✅ limit lagao warna sab load hoga
+  url = `/bills`;// ✅ limit lagao warna sab load hoga
     }
 
     const bls = await apiCall(url);

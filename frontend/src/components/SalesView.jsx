@@ -13,6 +13,7 @@ const [endDate,   setEndDate]   = useState("");
     const [editItems,   setEditItems]   = useState([]);
     const [editSaving,  setEditSaving]  = useState(false);
     const [payFilter,   setPayFilter]   = useState("ALL");
+    const [visibleCount, setVisibleCount] = useState(50); // ✅ ADDED
 
     const todayStr     = today();
     const monthStr     = thisMonth();
@@ -63,6 +64,9 @@ if (filter === "month" && dateStr.slice(0, 7) !== monthStr) return false;
   if (payFilter !== "ALL" && (b.paymentMode || "CASH") !== payFilter) return false;
   return true;
 });
+
+    // ✅ ADDED — sirf itne bills render karo
+    const visibleBills = filtered.slice(0, visibleCount);
 
     const totalSales    = filtered.reduce((s, b) => s + b.total, 0);
     const totalDiscount = filtered.reduce((s, b) => s + (b.discountAmt || 0), 0);
@@ -220,25 +224,25 @@ const deleteAll = () => {
             <div style={{ fontSize: 20, fontWeight: 900, color: "#1a1310" }}>💰 Sales Overview</div>
             <div className="sales-filter-buttons">
               {["today", "yesterday", "month", "all"].map((f) => (
-                <button key={f} onClick={() => { setFilter(f); onFilterChange(f); }}
+                <button key={f} onClick={() => { setFilter(f); setVisibleCount(50); onFilterChange(f); }} 
                   style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid", borderColor: filter === f ? "#f59e0b" : "#e5e0d8", background: filter === f ? "#f59e0b" : "#fff", color: filter === f ? "#1a1310" : "#8a7e6e" }}>
                   {labels[f]}
                 </button>
               ))}
               <div className="date-range-wrap" style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 20, border: `1.5px solid ${filter === "custom" ? "#f59e0b" : "#e5e0d8"}`, background: filter === "custom" ? "#fff8ee" : "#fff" }}>
                 <input type="date" value={startDate}
-                  onChange={(e) => { setStartDate(e.target.value); setFilter("custom"); onFilterChange("all"); }}
+                  onChange={(e) => { setStartDate(e.target.value); setFilter("custom"); setVisibleCount(50); onFilterChange("all"); }} 
                   style={{ border: "none", background: "transparent", fontSize: 12, fontWeight: 700, color: "#1a1310", outline: "none", cursor: "pointer", minWidth: 0, width: "100%" }}
                 />
                 <span style={{ fontSize: 12, color: "#8a7e6e", fontWeight: 700, flexShrink: 0 }}>→</span>
                 <input type="date" value={endDate}
-                  onChange={(e) => { setEndDate(e.target.value); setFilter("custom"); onFilterChange("all"); }}
+                  onChange={(e) => { setEndDate(e.target.value); setFilter("custom"); setVisibleCount(50); onFilterChange("all"); }}
                   style={{ border: "none", background: "transparent", fontSize: 12, fontWeight: 700, color: "#1a1310", outline: "none", cursor: "pointer", minWidth: 0, width: "100%" }}
                 />
               </div>
               <div style={{ width: 1, height: 24, background: "#e5e0d8", flexShrink: 0 }} />
               {["ALL", "CASH", "UPI"].map((pm) => (
-                <button key={pm} onClick={() => setPayFilter(pm)}
+                <button key={pm} onClick={() => { setPayFilter(pm); setVisibleCount(50); }}
                   style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid", borderColor: payFilter === pm ? "#2563eb" : "#e5e0d8", background: payFilter === pm ? "#2563eb" : "#fff", color: payFilter === pm ? "#fff" : "#8a7e6e" }}>
                   {pm === "ALL" ? "💳 All" : pm === "CASH" ? "💵 Cash" : "📲 UPI"}
                 </button>
@@ -295,9 +299,16 @@ const deleteAll = () => {
 
           {/* ─── Bills Table ─── */}
           <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", overflow: "hidden" }}>
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e0d8", fontSize: 14, fontWeight: 800, color: "#1a1310" }}>🧾 Bills — {labels[filter]}</div>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e0d8", fontSize: 14, fontWeight: 800, color: "#1a1310" }}>
+              🧾 Bills — {labels[filter]}
+              <span style={{ marginLeft: 8, fontSize: 12, color: "#8a7e6e", fontWeight: 600 }}>
+                ({Math.min(visibleCount, filtered.length)} of {filtered.length} shown)
+              </span>
+            </div>
             {filtered.length === 0 && <div style={{ textAlign: "center", color: "#c9b9a8", padding: "40px 0", fontSize: 14 }}>Koi bill nahi {labels[filter].toLowerCase()} mein</div>}
-            {filtered.map((b, i) => (
+
+            {/* ✅ visibleBills.map — filtered.map se replace kiya */}
+            {visibleBills.map((b, i) => (
               <div key={b.id} className="bill-row" style={{ borderTop: i > 0 ? "1px solid #f0ebe4" : "none", background: selected.includes(b.id) ? "#fff8ee" : "transparent" }}>
                 <input type="checkbox" checked={selected.includes(b.id)} onChange={() => toggleSelect(b.id)} style={{ width: 16, height: 16, cursor: "pointer", flexShrink: 0 }} />
                 <div className="bill-info-main" style={{ flex: 1, minWidth: 140 }}>
@@ -335,6 +346,16 @@ const deleteAll = () => {
                 </div>
               </div>
             ))}
+
+            {/* ✅ LOAD MORE BUTTON — naya add kiya */}
+            {filtered.length > visibleCount && (
+              <div style={{ textAlign: "center", padding: "20px" }}>
+                <button onClick={() => setVisibleCount(v => v + 50)}
+                  style={{ padding: "10px 32px", borderRadius: 20, border: "1.5px solid #f59e0b", background: "#fff8ee", color: "#1a1310", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                  Load More — {filtered.length - visibleCount} aur bills baki hain
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ─── Edit Bill Modal ─── */}
