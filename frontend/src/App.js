@@ -216,20 +216,21 @@ const handleDeleteBill = async (id) => {
   const fetchBillsForFilter = async (filterType, customDate) => {
   try {
     let url = "/bills";
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    
+    // IST timezone use karo
+    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const yesterdayStr = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
     if (filterType === "today") {
       url = `/bills?date=${todayStr}`;
     } else if (filterType === "yesterday") {
       url = `/bills?date=${yesterdayStr}`;
     } else if (filterType === "month") {
-      const m = new Date().toISOString().slice(0, 7);
+      const m = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }).slice(0, 7);
       url = `/bills?month=${m}`;
     } else if (filterType === "all") {
-      url = `/bills`;
+      url = `/bills?limit=200`; // ✅ limit lagao warna sab load hoga
     }
-    // custom ke liye kuch mat karo — frontend filter karega
 
     const bls = await apiCall(url);
     setBills(bls);

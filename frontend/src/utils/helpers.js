@@ -15,11 +15,11 @@ export function formatTime(d) {
 }
 
 export function today() {
-  return new Date().toISOString().slice(0, 10);
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }
 
 export function thisMonth() {
-  return new Date().toISOString().slice(0, 7);
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }).slice(0, 7);
 }
 
 export function formatQty(qty, unit) {
