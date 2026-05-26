@@ -16,7 +16,7 @@ const [endDate,   setEndDate]   = useState("");
 
     const todayStr     = today();
     const monthStr     = thisMonth();
-    const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const yesterdayStr = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
     const openEdit = (bill) => {
       setEditingBill(bill);
@@ -51,18 +51,18 @@ const [endDate,   setEndDate]   = useState("");
     };
 
     const filtered = bills.filter((b) => {
-      if (filter === "today"     && b.date?.slice(0, 10) !== todayStr)     return false;
-      if (filter === "yesterday" && b.date?.slice(0, 10) !== yesterdayStr) return false;
-      if (filter === "month"     && b.date?.slice(0, 7)  !== monthStr)     return false;
-    if (filter === "custom") {
-  const d = b.date?.slice(0, 10);
-  if (!startDate && !endDate) return false;
-  if (startDate && d < startDate) return false;
-  if (endDate   && d > endDate)   return false;
-}
-      if (payFilter !== "ALL" && (b.paymentMode || "CASH") !== payFilter)  return false;
-      return true;
-    });
+const dateStr = new Date(b.date).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });  if (filter === "today"     && dateStr !== todayStr)     return false;
+  if (filter === "yesterday" && dateStr !== yesterdayStr) return false;
+if (filter === "month" && dateStr.slice(0, 7) !== monthStr) return false;
+
+  if (filter === "custom") {
+    if (!startDate && !endDate) return false;
+    if (startDate && dateStr < startDate) return false;
+    if (endDate   && dateStr > endDate)   return false;
+  }
+  if (payFilter !== "ALL" && (b.paymentMode || "CASH") !== payFilter) return false;
+  return true;
+});
 
     const totalSales    = filtered.reduce((s, b) => s + b.total, 0);
     const totalDiscount = filtered.reduce((s, b) => s + (b.discountAmt || 0), 0);
