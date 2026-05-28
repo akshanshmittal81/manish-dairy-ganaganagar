@@ -47,9 +47,9 @@ export default function App() {
   }, []);
   useEffect(() => {
     const API = process.env.REACT_APP_API_URL?.replace("/api", "");
-    fetch(API + "/health").catch(() => { });
+    fetch(API + "/api/health").catch(() => { });
     const ping = setInterval(() => {
-      fetch(API + "/health").catch(() => { });
+      fetch(API + "/api/health").catch(() => { });
     }, 14 * 60 * 1000);
     return () => clearInterval(ping);
   }, []);
@@ -92,6 +92,8 @@ export default function App() {
   const [customerForm, setCustomerForm] = useState({ name: "", phone: "" });
   const [discount, setDiscount] = useState(0);
   const [editingBillId, setEditingBillId] = useState(null);
+  const [heldBills, setHeldBills] = useState([]);
+  const [holdCounter, setHoldCounter] = useState(1);
 
   // ─── LOAD DATA ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -415,6 +417,10 @@ export default function App() {
             dbCats={dbCats}
             editingBillId={editingBillId}
             onCancelEdit={() => { setEditingBillId(null); setCart([]); setView("sales"); }}
+            heldBills={heldBills}
+            setHeldBills={setHeldBills}
+            holdCounter={holdCounter}
+            setHoldCounter={setHoldCounter}
           />
         )}
         {view === "products" && (
