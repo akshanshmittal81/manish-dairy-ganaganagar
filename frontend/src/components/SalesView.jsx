@@ -1,446 +1,227 @@
-import { useState } from "react";
-  import Icon from "./Icon";
-  import { formatINR, formatDate, formatTime, today, thisMonth } from "../utils/helpers";
-  import { exportToExcel } from "../utils/exportExcel";
-  import { printBill } from "../utils/printBill";
+import { useState, useEffect } from "react";
+import Icon from "./Icon";
+import { formatINR, formatDate, formatTime, today, thisMonth } from "../utils/helpers";
+import { apiCall } from "../utils/api";
+import { exportToExcel } from "../utils/exportExcel";
+import { printBill } from "../utils/printBill";
 
- export default function SalesView({ bills, onDelete, onDeleteAll, onEdit, products, onFilterChange, onLoadEdit }) {
-    const [filter,      setFilter]      = useState("today");
-    const [startDate, setStartDate] = useState("");
-const [endDate,   setEndDate]   = useState("");
-    const [selected,    setSelected]    = useState([]);
-    const [editingBill, setEditingBill] = useState(null);
-    const [editItems,   setEditItems]   = useState([]);
-    const [editSaving,  setEditSaving]  = useState(false);
-    const [payFilter,   setPayFilter]   = useState("ALL");
-    const [visibleCount, setVisibleCount] = useState(50); // ✅ ADDED
+// ─── SALES VIEW ───────────────────────────────────────────────────────────────
+export default function SalesView({ bills: initialBills, onDelete, onDeleteAll, onEdit, products, setView, onLoadEdit, onSecretTap }) {
+  const [filter, setFilter] = useState("today");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [bills, setBills] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState([]);
+  const [payFilter, setPayFilter] = useState("ALL");
+  const [cache, setCache] = useState({});
 
-    const todayStr     = today();
-    const monthStr     = thisMonth();
-  const yesterdayStr = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  // ─── Fetch bills from backend ──────────────────────────────────────────────
+  useEffect(() => {
+    async function fetchBills() {
+      let path = "/bills";
+      const todayIST = new Date().toLocaleDateString("en-CA");
+      const yesterdayIST = new Date(Date.now() - 86400000).toLocaleDateString("en-CA");
 
-    const openEdit = (bill) => {
-      setEditingBill(bill);
-      setEditItems(bill.items.map((i) => ({ ...i })));
-    };
+      if (filter === "today") path = `/bills?date=${todayIST}&limit=10000`;
+      else if (filter === "yesterday") path = `/bills?date=${yesterdayIST}&limit=10000`;
+      else if (filter === "month") path = `/bills?month=${thisMonth()}&limit=10000`;
+      else if (filter === "all") path = `/bills?limit=10000`;
+      else if (filter === "custom" && startDate) path = `/bills?date=${startDate}&endDate=${endDate || startDate}&limit=10000`;
+      else return;
 
-    const updateEditQty = (itemId, qty) => {
-      if (qty <= 0) {
-        setEditItems((prev) => prev.filter((i) => i.id !== itemId));
-      } else {
-        setEditItems((prev) =>
-          prev.map((i) => (i.id === itemId ? { ...i, qty, total: qty * i.price } : i))
-        );
+      const cacheTTL = filter === "today" ? 30000 : 300000;
+      const cached = cache[path];
+      if (cached && Date.now() - cached.time < cacheTTL) {
+        setBills(cached.data);
+        return;
       }
-    };
 
-    const addEditItem = (product) => {
-      const exists = editItems.find((i) => i.id === product.id);
-      if (exists) {
-        updateEditQty(product.id, exists.qty + 1);
-      } else {
-        setEditItems((prev) => [...prev, { ...product, qty: 1, total: product.price }]);
+      setLoading(true);
+      try {
+        const data = await apiCall(path);
+        setBills(Array.isArray(data) ? data : (data.bills || []));
+        setCache((prev) => ({ ...prev, [path]: { data, time: Date.now() } }));
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
       }
-    };
+    }
+    fetchBills();
+  }, [filter, startDate, endDate]);
 
-    const saveEdit = async () => {
-      if (!editItems.length) { alert("Bill mein kam se kam 1 item hona chahiye!"); return; }
-      setEditSaving(true);
-      const ok = await onEdit(editingBill.id, editItems, 0);
-      if (ok) setEditingBill(null);
-      setEditSaving(false);
-    };
+  // ─── Filter by payment mode + custom date range ────────────────────────────
+  const filtered = bills.filter((b) => {
+    if (payFilter !== "ALL" && (b.paymentMode || "CASH") !== payFilter) return false;
+    if (filter === "custom") {
+      const d = b.date?.slice(0, 10);
+      if (startDate && d < startDate) return false;
+      if (endDate && d > endDate) return false;
+    }
+    return true;
+  });
 
-    const filtered = bills.filter((b) => {
-const dateStr = new Date(b.date).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });  if (filter === "today"     && dateStr !== todayStr)     return false;
-  if (filter === "yesterday" && dateStr !== yesterdayStr) return false;
-if (filter === "month" && dateStr.slice(0, 7) !== monthStr) return false;
+  const totalSales = filtered.reduce((s, b) => s + b.total, 0);
+  const totalDiscount = filtered.reduce((s, b) => s + (b.discountAmt || 0), 0);
 
-  if (filter === "custom") {
-    if (!startDate && !endDate) return false;
-    if (startDate && dateStr < startDate) return false;
-    if (endDate   && dateStr > endDate)   return false;
-  }
-  if (payFilter !== "ALL" && (b.paymentMode || "CASH") !== payFilter) return false;
-  return true;
-});
+  const labels = {
+    today: "Today",
+    yesterday: "Yesterday",
+    month: "This Month",
+    all: "All Time",
+    custom: startDate && endDate ? `${startDate} → ${endDate}` : startDate ? `From ${startDate}` : "Custom Range",
+  };
 
-    // ✅ ADDED — sirf itne bills render karo
-    const visibleBills = filtered.slice(0, visibleCount);
+  const toggleSelect = (id) => {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
 
-    const totalSales    = filtered.reduce((s, b) => s + b.total, 0);
-    const totalDiscount = filtered.reduce((s, b) => s + (b.discountAmt || 0), 0);
-    const labels = { today: "Today", yesterday: "Yesterday", month: "This Month", all: "All Time", custom: startDate && endDate ? `${startDate} → ${endDate}` : startDate ? `From ${startDate}` : "Custom Range" };
+  const deleteSelected = async () => {
+    if (!selected.length) return;
+    const pass = prompt("Admin Password Enter Karo:");
+    if (pass !== "aniket123") { alert("❌ Wrong Password!"); return; }
+    if (!window.confirm(`${selected.length} bills delete karne hain?`)) return;
+    for (const id of selected) await onDelete(id);
+    setSelected([]);
+  };
 
-    const toggleSelect  = (id) => setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  const deleteAll = () => {
+    if (!window.confirm("Saari history delete karna chahte ho? Yeh action undo nahi hoga!")) return;
+    onDeleteAll();
+    setSelected([]);
+  };
 
-   const deleteSelected = async () => {
-  if (!selected.length) return;
-  const pwd = prompt("Delete karne ke liye password daalo:");
-  if (pwd !== "manish123") {
-    if (pwd !== null) alert("❌ Galat password!");
-    return;
-  }
-  if (!window.confirm(`${selected.length} bills delete karne hain?`)) return;
-  for (const id of selected) await onDelete(id);
-  setSelected([]);
-};
-const deleteAll = () => {
-  const pwd = prompt("Delete karne ke liye password daalo:");
-  if (pwd !== "manish123") {
-    if (pwd !== null) alert("❌ Galat password!");
-    return;
-  }
-  if (!window.confirm("Saari history delete karna chahte ho? Yeh action undo nahi hoga!")) return;
-  onDeleteAll();
-  setSelected([]);
-};
+  const isMobile = window.innerWidth < 768;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 12 : 20, padding: isMobile ? "0 4px" : 0 }}>
+      {/* Header + filters */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ fontSize: 20, fontWeight: 900, color: "#1a1310" }} onClick={onSecretTap}>💰 Sales Overview</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: isMobile ? "center" : "flex-start" }}>
+          {["today", "yesterday", "month", "all"].map((f) => (
+            <button key={f} onClick={() => setFilter(f)}
+              style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid", borderColor: filter === f ? "#f59e0b" : "#e5e0d8", background: filter === f ? "#f59e0b" : "#fff", color: filter === f ? "#1a1310" : "#8a7e6e" }}>
+              {labels[f]}
+            </button>
+          ))}
 
-    return (
-      <>
-        {/* ─── Mobile Responsive Styles ─── */}
-        <style>{`
-          .sales-filter-bar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 12px;
-          }
-          .sales-filter-buttons {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-          }
-          .sales-kpi-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 16px;
-          }
-          .sales-pay-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-          }
-          .bill-row {
-            display: flex;
-            align-items: center;
-            padding: 13px 20px;
-            gap: 16px;
-            flex-wrap: wrap;
-          }
-          .bill-row-actions {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-          }
-          .edit-modal-inner {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: #fff;
-            border-radius: 20px;
-            padding: 28px;
-            width: 520px;
-            max-width: calc(100vw - 32px);
-            max-height: 85vh;
-            overflow-y: auto;
-            z-index: 301;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-          }
-          @media (max-width: 600px) {
-            .sales-filter-bar {
-              flex-direction: column;
-              align-items: flex-start;
-            }
-            .sales-filter-buttons {
-              width: 100%;
-            }
-            .sales-filter-buttons button,
-            .sales-filter-buttons .date-range-wrap {
-              flex: 1 1 calc(50% - 4px);
-              min-width: 0;
-              font-size: 12px !important;
-              padding: 7px 10px !important;
-            }
-            .sales-kpi-grid {
-              grid-template-columns: 1fr 1fr;
-              gap: 10px;
-            }
-            .sales-kpi-grid > div {
-              padding: 14px !important;
-            }
-            .sales-kpi-grid > div > div:nth-child(3) {
-              font-size: 18px !important;
-            }
-            .sales-pay-grid {
-              grid-template-columns: 1fr 1fr;
-              gap: 10px;
-            }
-            .sales-pay-grid > div {
-              padding: 14px !important;
-            }
-            .sales-pay-grid > div > div:nth-child(3) {
-              font-size: 18px !important;
-            }
-            .bill-row {
-              padding: 12px 14px;
-              gap: 8px;
-            }
-            .bill-info-main {
-              flex: 1 1 100% !important;
-            }
-            .bill-row-meta {
-              display: flex;
-              flex-wrap: wrap;
-              gap: 6px;
-              width: 100%;
-              align-items: center;
-            }
-            .bill-row-amount {
-              margin-left: auto;
-              font-size: 15px !important;
-              font-weight: 900 !important;
-            }
-            .bill-row-actions {
-              width: 100%;
-              justify-content: flex-end;
-            }
-            .export-btn {
-              width: 100%;
-              justify-content: center;
-            }
-            .edit-modal-inner {
-              padding: 18px 14px;
-              border-radius: 14px;
-            }
-          }
-        `}</style>
+          {/* ─── Start → End Date Range ─── */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 20, border: `1.5px solid ${filter === "custom" ? "#f59e0b" : "#e5e0d8"}`, background: filter === "custom" ? "#fff8ee" : "#fff" }}>
+            <input type="date" value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); setFilter("custom"); }}
+              style={{ border: "none", background: "transparent", fontSize: 12, fontWeight: 700, color: "#1a1310", outline: "none", cursor: "pointer" }}
+            />
+            <span style={{ fontSize: 12, color: "#8a7e6e", fontWeight: 700 }}>→</span>
+            <input type="date" value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); setFilter("custom"); }}
+              style={{ border: "none", background: "transparent", fontSize: 12, fontWeight: 700, color: "#1a1310", outline: "none", cursor: "pointer" }}
+            />
+          </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          {/* ─── Filters ─── */}
-          <div className="sales-filter-bar">
-            <div style={{ fontSize: 20, fontWeight: 900, color: "#1a1310" }}>💰 Sales Overview</div>
-            <div className="sales-filter-buttons">
-              {["today", "yesterday", "month", "all"].map((f) => (
-                <button key={f} onClick={() => { setFilter(f); setVisibleCount(50); onFilterChange(f); }} 
-                  style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid", borderColor: filter === f ? "#f59e0b" : "#e5e0d8", background: filter === f ? "#f59e0b" : "#fff", color: filter === f ? "#1a1310" : "#8a7e6e" }}>
-                  {labels[f]}
-                </button>
-              ))}
-              <div className="date-range-wrap" style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 20, border: `1.5px solid ${filter === "custom" ? "#f59e0b" : "#e5e0d8"}`, background: filter === "custom" ? "#fff8ee" : "#fff" }}>
-                <input type="date" value={startDate}
-                  onChange={(e) => { setStartDate(e.target.value); setFilter("custom"); setVisibleCount(50); onFilterChange("all"); }} 
-                  style={{ border: "none", background: "transparent", fontSize: 12, fontWeight: 700, color: "#1a1310", outline: "none", cursor: "pointer", minWidth: 0, width: "100%" }}
-                />
-                <span style={{ fontSize: 12, color: "#8a7e6e", fontWeight: 700, flexShrink: 0 }}>→</span>
-                <input type="date" value={endDate}
-                  onChange={(e) => { setEndDate(e.target.value); setFilter("custom"); setVisibleCount(50); onFilterChange("all"); }}
-                  style={{ border: "none", background: "transparent", fontSize: 12, fontWeight: 700, color: "#1a1310", outline: "none", cursor: "pointer", minWidth: 0, width: "100%" }}
-                />
+          <div style={{ width: 1, height: 24, background: "#e5e0d8" }} />
+
+          {["ALL", "CASH", "UPI"].map((pm) => (
+            <button key={pm} onClick={() => setPayFilter(pm)}
+              style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid", borderColor: payFilter === pm ? "#2563eb" : "#e5e0d8", background: payFilter === pm ? "#2563eb" : "#fff", color: payFilter === pm ? "#fff" : "#8a7e6e" }}>
+              {pm === "ALL" ? "💳 All" : pm === "CASH" ? "💵 Cash" : "📲 UPI"}
+            </button>
+          ))}
+
+          {selected.length > 0 && (
+            <button onClick={deleteSelected} style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid #ef4444", background: "#ef4444", color: "#fff" }}>
+              🗑️ Delete Selected ({selected.length})
+            </button>
+          )}
+          <button onClick={deleteAll} style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid #ef4444", background: "#fff", color: "#ef4444" }}>
+            🗑️ Delete All
+          </button>
+        </div>
+        <button onClick={() => exportToExcel(filtered, filter, filter === "custom" ? (startDate === endDate || !endDate ? startDate : `${startDate}_${endDate}`) : null)} style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid #16a34a", background: "#f0fdf4", color: "#16a34a" }}>
+          📊 Export Excel
+        </button>
+      </div>
+
+      {/* KPI cards */}
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(auto-fill, minmax(200px, 1fr))", gap: isMobile ? 10 : 16 }}>
+        {[
+          { label: "Total Sales", value: formatINR(totalSales), color: "#2563eb", icon: "💳", sub: `${filtered.length} bills` },
+          { label: "Total Profit", value: "₹0.00", color: "#16a34a", icon: "📈", sub: "" },
+          { label: "Discount Given", value: formatINR(totalDiscount), color: "#f59e0b", icon: "🏷️", sub: `${filtered.filter((b) => b.discountPct > 0).length} discounted bills` },
+          { label: "Avg Bill Value", value: filtered.length ? formatINR(totalSales / filtered.length) : "₹0.00", color: "#7c3aed", icon: "🧾", sub: "per bill" },
+        ].map((k) => (
+          <div key={k.label} style={{ background: "#fff", borderRadius: 16, padding: isMobile ? "14px" : "20px", border: "1px solid #e5e0d8" }}>
+            <div style={{ fontSize: isMobile ? 18 : 22, marginBottom: 4 }}>{k.icon}</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#8a7e6e", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>{k.label}</div>
+            <div style={{ fontSize: isMobile ? 18 : 24, fontWeight: 900, color: k.color, marginBottom: 2 }}>{k.value}</div>
+            <div style={{ fontSize: 11, color: "#8a7e6e" }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Cash / UPI split */}
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 10 : 16 }}>
+        {[
+          { label: "Cash Sales", value: formatINR(filtered.filter((b) => (b.paymentMode || "CASH") === "CASH").reduce((s, b) => s + b.total, 0)), color: "#16a34a", icon: "💵", sub: `${filtered.filter((b) => (b.paymentMode || "CASH") === "CASH").length} bills` },
+          { label: "UPI Sales", value: formatINR(filtered.filter((b) => b.paymentMode === "UPI").reduce((s, b) => s + b.total, 0)), color: "#2563eb", icon: "📲", sub: `${filtered.filter((b) => b.paymentMode === "UPI").length} bills` },
+        ].map((k) => (
+          <div key={k.label} style={{ background: "#fff", borderRadius: 16, padding: "20px", border: "1px solid #e5e0d8" }}>
+            <div style={{ fontSize: 22, marginBottom: 6 }}>{k.icon}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#8a7e6e", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>{k.label}</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: k.color, marginBottom: 2 }}>{k.value}</div>
+            <div style={{ fontSize: 12, color: "#8a7e6e" }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Bills list */}
+      <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", overflow: "hidden" }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e0d8", fontSize: 14, fontWeight: 800, color: "#1a1310" }}>
+          🧾 Bills — {labels[filter]}
+        </div>
+        {loading && <div style={{ textAlign: "center", padding: "40px 0", fontSize: 15, color: "#8a7e6e" }}>⏳ Data load ho raha hai...</div>}
+        {!loading && filtered.length === 0 && (
+          <div style={{ textAlign: "center", color: "#c9b9a8", padding: "40px 0", fontSize: 14 }}>
+            Koi bill nahi {labels[filter].toLowerCase()} mein
+          </div>
+        )}
+        {[...filtered].sort((a, b) => new Date(b.date) - new Date(a.date)).map((b, i) => (
+          <div key={b.id}
+            style={{ display: "flex", alignItems: "center", padding: isMobile ? "10px 12px" : "13px 20px", borderTop: i > 0 ? "1px solid #f0ebe4" : "none", gap: isMobile ? 8 : 16, flexWrap: "wrap", background: selected.includes(b.id) ? "#fff8ee" : "transparent" }}>
+            <input type="checkbox" checked={selected.includes(b.id)} onChange={() => toggleSelect(b.id)} style={{ width: 16, height: 16, cursor: "pointer", flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1310" }}>
+                Token: {b.id?.slice(-3)}
               </div>
-              <div style={{ width: 1, height: 24, background: "#e5e0d8", flexShrink: 0 }} />
-              {["ALL", "CASH", "UPI"].map((pm) => (
-                <button key={pm} onClick={() => { setPayFilter(pm); setVisibleCount(50); }}
-                  style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid", borderColor: payFilter === pm ? "#2563eb" : "#e5e0d8", background: payFilter === pm ? "#2563eb" : "#fff", color: payFilter === pm ? "#fff" : "#8a7e6e" }}>
-                  {pm === "ALL" ? "💳 All" : pm === "CASH" ? "💵 Cash" : "📲 UPI"}
-                </button>
-              ))}
-              {selected.length > 0 && (
-                <button onClick={deleteSelected} style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid #ef4444", background: "#ef4444", color: "#fff" }}>
-                  🗑️ Delete Selected ({selected.length})
-                </button>
-              )}
-              <button onClick={deleteAll} style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid #ef4444", background: "#fff", color: "#ef4444" }}>
-                🗑️ Delete All
-              </button>
+              <div style={{ fontSize: 11, color: "#8a7e6e" }}>{formatDate(b.date)} · {formatTime(b.date)}</div>
             </div>
-            <button className="export-btn" onClick={() => exportToExcel(filtered, filter === "today" ? today() : filter === "yesterday" ? new Date(Date.now() - 86400000).toISOString().slice(0, 10) : filter === "month" ? thisMonth() : filter === "custom" && startDate ? `${startDate}_${endDate || startDate}` : "all")} style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid #16a34a", background: "#f0fdf4", color: "#16a34a", display: "flex", alignItems: "center", gap: 6 }}>
-              📊 Export Excel
+            {b.customer?.name && <div style={{ fontSize: 12, color: "#4a3f35" }}>👤 {b.customer.name}</div>}
+            <div style={{ fontSize: 12, color: "#8a7e6e" }}>{b.items?.length} items</div>
+            {b.discountPct > 0 && <div style={{ fontSize: 12, color: "#f59e0b", fontWeight: 700 }}>🏷️ {b.discountPct}% off</div>}
+            <div style={{ fontSize: 11, fontWeight: 800, padding: "3px 8px", borderRadius: 20, background: (b.paymentMode || "CASH") === "UPI" ? "#eff6ff" : "#f0fdf4", color: (b.paymentMode || "CASH") === "UPI" ? "#2563eb" : "#16a34a" }}>
+              {(b.paymentMode || "CASH") === "UPI" ? "📲 UPI" : "💵 CASH"}
+            </div>
+            <div style={{ textAlign: "right" }}>{formatINR(b.total)}</div>
+            <button onClick={() => onLoadEdit(b)}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #2563eb", background: "#eff6ff", cursor: "pointer", fontSize: 11, color: "#2563eb", fontWeight: 700, display: "flex", gap: 4, alignItems: "center" }}>
+              <Icon name="edit" size={12} /> Edit
+            </button>
+            <button onClick={() => printBill(b)}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e5e0d8", background: "#fff", cursor: "pointer", fontSize: 11, color: "#4a3f35", display: "flex", gap: 4, alignItems: "center" }}>
+              <Icon name="print" size={12} /> Print
+            </button>
+            <button onClick={async () => {
+              if (window.confirm("Yeh bill delete karein?")) {
+                setBills((prev) => prev.filter((x) => x.id !== b.id));
+                await onDelete(b.id);
+              }
+            }}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fff", cursor: "pointer", fontSize: 11, color: "#ef4444", display: "flex", gap: 4, alignItems: "center" }}>
+              <Icon name="trash" size={12} /> Delete
             </button>
           </div>
-
-          {/* ─── KPI Cards ─── */}
-          <div className="sales-kpi-grid">
-            {[
-              { label: "Total Sales",    value: formatINR(totalSales),   color: "#2563eb", icon: "💳", sub: `${filtered.length} bills` },
-              { label: "Total Profit",   value: "₹0.00",                  color: "#16a34a", icon: "📈", sub: "" },
-              { label: "Discount Given", value: formatINR(totalDiscount), color: "#f59e0b", icon: "🏷️", sub: `${filtered.filter((b) => b.discountPct > 0).length} discounted bills` },
-              { label: "Avg Bill Value", value: filtered.length ? formatINR(totalSales / filtered.length) : "₹0.00", color: "#7c3aed", icon: "🧾", sub: "per bill" },
-            ].map((k) => (
-              <div key={k.label} style={{ background: "#fff", borderRadius: 16, padding: "20px", border: "1px solid #e5e0d8" }}>
-                <div style={{ fontSize: 22, marginBottom: 6 }}>{k.icon}</div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#8a7e6e", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>{k.label}</div>
-                <div style={{ fontSize: 24, fontWeight: 900, color: k.color, marginBottom: 2 }}>{k.value}</div>
-                <div style={{ fontSize: 12, color: "#8a7e6e" }}>{k.sub}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* ─── Cash / UPI ─── */}
-          <div className="sales-pay-grid">
-            {[
-              { label: "Cash Sales", icon: "💵", color: "#16a34a",
-                value: formatINR(filtered.filter((b) => (b.paymentMode || "CASH") === "CASH").reduce((s, b) => s + b.total, 0)),
-                sub: `${filtered.filter((b) => (b.paymentMode || "CASH") === "CASH").length} bills` },
-              { label: "UPI Sales",  icon: "📲", color: "#2563eb",
-                value: formatINR(filtered.filter((b) => b.paymentMode === "UPI").reduce((s, b) => s + b.total, 0)),
-                sub: `${filtered.filter((b) => b.paymentMode === "UPI").length} bills` },
-            ].map((k) => (
-              <div key={k.label} style={{ background: "#fff", borderRadius: 16, padding: "20px", border: "1px solid #e5e0d8" }}>
-                <div style={{ fontSize: 22, marginBottom: 6 }}>{k.icon}</div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#8a7e6e", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>{k.label}</div>
-                <div style={{ fontSize: 24, fontWeight: 900, color: k.color, marginBottom: 2 }}>{k.value}</div>
-                <div style={{ fontSize: 12, color: "#8a7e6e" }}>{k.sub}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* ─── Bills Table ─── */}
-          <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", overflow: "hidden" }}>
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e0d8", fontSize: 14, fontWeight: 800, color: "#1a1310" }}>
-              🧾 Bills — {labels[filter]}
-              <span style={{ marginLeft: 8, fontSize: 12, color: "#8a7e6e", fontWeight: 600 }}>
-                ({Math.min(visibleCount, filtered.length)} of {filtered.length} shown)
-              </span>
-            </div>
-            {filtered.length === 0 && <div style={{ textAlign: "center", color: "#c9b9a8", padding: "40px 0", fontSize: 14 }}>Koi bill nahi {labels[filter].toLowerCase()} mein</div>}
-
-            {/* ✅ visibleBills.map — filtered.map se replace kiya */}
-            {visibleBills.map((b, i) => (
-              <div key={b.id} className="bill-row" style={{ borderTop: i > 0 ? "1px solid #f0ebe4" : "none", background: selected.includes(b.id) ? "#fff8ee" : "transparent" }}>
-                <input type="checkbox" checked={selected.includes(b.id)} onChange={() => toggleSelect(b.id)} style={{ width: 16, height: 16, cursor: "pointer", flexShrink: 0 }} />
-                <div className="bill-info-main" style={{ flex: 1, minWidth: 140 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1310" }}>
-                    Token: {b.id?.slice(-3)}
-                  </div>
-                  <div style={{ fontSize: 11, color: "#8a7e6e" }}>{formatDate(b.date)} · {formatTime(b.date)}</div>
-                </div>
-                <div className="bill-row-meta">
-                  {b.customer?.name && <div style={{ fontSize: 12, color: "#4a3f35" }}>👤 {b.customer.name}</div>}
-                  <div style={{ fontSize: 12, color: "#8a7e6e" }}>{b.items?.length} items</div>
-                  {b.discountPct > 0 && <div style={{ fontSize: 12, color: "#f59e0b", fontWeight: 700 }}>🏷️ {b.discountPct}% off</div>}
-                  <div style={{ fontSize: 11, fontWeight: 800, padding: "3px 8px", borderRadius: 20, background: (b.paymentMode || "CASH") === "UPI" ? "#eff6ff" : "#f0fdf4", color: (b.paymentMode || "CASH") === "UPI" ? "#2563eb" : "#16a34a" }}>
-                    {(b.paymentMode || "CASH") === "UPI" ? "📲 UPI" : "💵 CASH"}
-                  </div>
-                  <div className="bill-row-amount" style={{ textAlign: "right" }}>{formatINR(b.total)}</div>
-                </div>
-                <div className="bill-row-actions">
-                  <button onClick={() => onLoadEdit(b)} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #2563eb", background: "#eff6ff", cursor: "pointer", fontSize: 11, color: "#2563eb", fontWeight: 700, display: "flex", gap: 4, alignItems: "center" }}>
-                    <Icon name="edit" size={12} /> Edit
-                  </button>
-                  <button onClick={() => printBill(b)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e5e0d8", background: "#fff", cursor: "pointer", fontSize: 11, color: "#4a3f35", display: "flex", gap: 4, alignItems: "center" }}>
-                    <Icon name="print" size={12} /> Print
-                  </button>
-                  <button onClick={() => {
-  const pwd = prompt("Delete karne ke liye password daalo:");
-  if (pwd === "manish123") {
-    if (window.confirm("Yeh bill delete karein?")) onDelete(b.id);
-  } else if (pwd !== null) {
-    alert("❌ Galat password!");
-  }
-}}   style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fff", cursor: "pointer", fontSize: 11, color: "#ef4444", display: "flex", gap: 4, alignItems: "center" }}>
-                    <Icon name="trash" size={12} /> Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            {/* ✅ LOAD MORE BUTTON — naya add kiya */}
-            {filtered.length > visibleCount && (
-              <div style={{ textAlign: "center", padding: "20px" }}>
-                <button onClick={() => setVisibleCount(v => v + 50)}
-                  style={{ padding: "10px 32px", borderRadius: 20, border: "1.5px solid #f59e0b", background: "#fff8ee", color: "#1a1310", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
-                  Load More — {filtered.length - visibleCount} aur bills baki hain
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* ─── Edit Bill Modal ─── */}
-          {editingBill && (
-            <>
-              <div onClick={() => setEditingBill(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 300 }} />
-              <div className="edit-modal-inner">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                  <div>
-                    <div style={{ fontSize: 16, fontWeight: 900, color: "#1a1310" }}>✏️ Edit Bill — {editingBill.id}</div>
-                    <div style={{ fontSize: 12, color: "#8a7e6e" }}>{formatDate(editingBill.date)} · {formatTime(editingBill.date)}</div>
-                  </div>
-                  <button onClick={() => setEditingBill(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a7e6e" }}>
-                    <Icon name="close" size={20} />
-                  </button>
-                </div>
-
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#8a7e6e", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Items</div>
-                <div style={{ background: "#f8f5f0", borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
-                  {editItems.map((item, i) => (
-                    <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderTop: i > 0 ? "1px solid #e5e0d8" : "none", flexWrap: "wrap" }}>
-                      <div style={{ flex: 1, minWidth: 100 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1310" }}>{item.name}</div>
-                        <div style={{ fontSize: 11, color: "#8a7e6e" }}>₹{item.price}/{item.unit}</div>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <button onClick={() => updateEditQty(item.id, +(item.qty - (item.unit === "piece" ? 1 : 0.25)).toFixed(3))}
-                          style={{ width: 30, height: 30, borderRadius: 8, border: "1.5px solid #e5e0d8", background: "#fff", cursor: "pointer", fontWeight: 900, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-                        <input type="number" value={item.qty} min="0" step={item.unit === "piece" ? 1 : 0.25}
-                          onChange={(e) => updateEditQty(item.id, +e.target.value)}
-                          style={{ width: 64, textAlign: "center", padding: "6px", border: "1.5px solid #e5e0d8", borderRadius: 8, fontSize: 14, fontWeight: 800, outline: "none" }} />
-                        <button onClick={() => updateEditQty(item.id, +(item.qty + (item.unit === "piece" ? 1 : 0.25)).toFixed(3))}
-                          style={{ width: 30, height: 30, borderRadius: 8, border: "1.5px solid #e5e0d8", background: "#fff", cursor: "pointer", fontWeight: 900, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
-                      </div>
-                      <div style={{ width: 80, textAlign: "right", fontSize: 13, fontWeight: 800, color: "#2563eb" }}>{formatINR(item.qty * item.price)}</div>
-                      <button onClick={() => updateEditQty(item.id, 0)} style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", padding: 4 }}>
-                        <Icon name="trash" size={14} />
-                      </button>
-                    </div>
-                  ))}
-                  {editItems.length === 0 && <div style={{ padding: "20px", textAlign: "center", color: "#c9b9a8", fontSize: 13 }}>Koi item nahi — neeche se add karo</div>}
-                </div>
-
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#8a7e6e", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Naya Item Add Karo</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20, maxHeight: 150, overflowY: "auto" }}>
-                  {products.map((p) => (
-                    <button key={p.id} onClick={() => addEditItem(p)}
-                      style={{ padding: "6px 12px", borderRadius: 20, border: "1.5px solid #e5e0d8", background: editItems.find((i) => i.id === p.id) ? "#1a1310" : "#f8f5f0", color: editItems.find((i) => i.id === p.id) ? "#f59e0b" : "#4a3f35", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                      + {p.name} ₹{p.price}
-                    </button>
-                  ))}
-                </div>
-
-                {(() => {
-                  const sub = editItems.reduce((s, i) => s + i.qty * i.price, 0);
-                  const tot = sub;
-                  const diff = tot - editingBill.total;
-                  return (
-                    <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 12, padding: "12px 16px", marginBottom: 20 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#8a7e6e", marginBottom: 4 }}>
-                        <span>Subtotal</span><span>{formatINR(sub)}</span>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 900, color: "#1a1310", borderTop: "1px solid #bae6fd", paddingTop: 8, marginTop: 4 }}>
-                        <span>New Total</span><span style={{ color: "#2563eb" }}>{formatINR(tot)}</span>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 6, fontWeight: 700, color: diff >= 0 ? "#16a34a" : "#ef4444" }}>
-                        <span>Sales Change</span><span>{diff >= 0 ? "+" : ""}{formatINR(diff)}</span>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                <div style={{ display: "flex", gap: 10 }}>
-                  <button onClick={() => setEditingBill(null)} style={{ flex: "0 0 44px", height: 46, borderRadius: 10, border: "1px solid #e5e0d8", background: "#fff", cursor: "pointer", color: "#8a7e6e", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Icon name="close" size={16} />
-                  </button>
-                  <button onClick={saveEdit} disabled={editSaving}
-                    style={{ flex: 1, padding: "13px", background: "#1a1310", color: "#f59e0b", border: "none", borderRadius: 10, fontWeight: 900, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: editSaving ? 0.7 : 1 }}>
-                    <Icon name="save" size={16} /> {editSaving ? "Saving..." : "Save Changes"}
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </>
-    );
-  }
+        ))}
+      </div>
+    </div>
+  );
+}
