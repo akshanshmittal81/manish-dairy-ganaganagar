@@ -5,16 +5,14 @@ import { printBill } from "../utils/printBill";
 import { useState, useEffect, useMemo } from "react";
 import { apiCall } from "../utils/api";
 
-export default function AnalyticsView() {
+export default function AnalyticsView({ bills = [] }) {
   const [selectedDate, setSelectedDate] = useState(
     () => new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })).toLocaleDateString("en-CA")
   );
-  const [bills, setBills] = useState([]);
+  
   const [selectedCategory, setSelectedCategory] = useState("All");
 
-  useEffect(() => {
-    apiCall("/bills").then(data => setBills(data)).catch(console.error);
-  }, []);
+ 
 
   const isMobile = window.innerWidth < 768;
 
