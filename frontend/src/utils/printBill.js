@@ -72,7 +72,7 @@ export function printBill(bill) {
     // Popup allowed ✅
     w.document.write(printContent);
     w.document.close();
-    setTimeout(() => { w.print(); w.close(); }, 300);
+   setTimeout(() => { w.print(); w.close(); }, 100);
   } else {
     // Popup blocked — use iframe fallback ✅
     const iframe = document.createElement("iframe");
@@ -81,9 +81,9 @@ export function printBill(bill) {
     iframe.contentDocument.open();
     iframe.contentDocument.write(printContent);
     iframe.contentDocument.close();
-    setTimeout(() => {
-      iframe.contentWindow.print();
-      setTimeout(() => document.body.removeChild(iframe), 1000);
-    }, 300);
+   setTimeout(() => {
+  iframe.contentWindow.print();
+  setTimeout(() => document.body.removeChild(iframe), 500);
+}, 100);
   }
 }
