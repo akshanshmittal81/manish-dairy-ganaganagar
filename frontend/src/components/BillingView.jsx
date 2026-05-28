@@ -59,6 +59,7 @@ import { useState, useMemo,useRef, useEffect } from "react";
 
     // Popular items
     const popularIds = useMemo(() => {
+      if (!bills?.length) return [];
       const countMap = {};
       bills.forEach((b) => b.items?.forEach((i) => { countMap[i.id] = (countMap[i.id] || 0) + 1; }));
       return Object.entries(countMap).sort(([, a], [, b]) => b - a).slice(0, 5).map(([id]) => id);
