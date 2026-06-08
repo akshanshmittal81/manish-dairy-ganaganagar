@@ -1,5 +1,6 @@
-const API = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
+import { API } from "./constants";
 
+// ─── API HELPER ───────────────────────────────────────────────────────────────
 export async function apiCall(path, method = "GET", body = null) {
   const token = localStorage.getItem("dairy_token");
   const opts = {
@@ -9,6 +10,7 @@ export async function apiCall(path, method = "GET", body = null) {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   };
+
   if (body) opts.body = JSON.stringify(body);
 
   const res = await fetch(`${API}${path}`, opts);

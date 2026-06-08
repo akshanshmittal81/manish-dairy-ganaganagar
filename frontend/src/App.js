@@ -23,6 +23,7 @@ export default function App() {
 
   // Admin shortcut: Ctrl+Shift+D → apply global discount
   useEffect(() => {
+    
     const handleKey = async (e) => {
       if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d") {
         const pass = prompt("Enter Admin Password");
@@ -47,9 +48,9 @@ export default function App() {
   }, []);
   useEffect(() => {
     const API = process.env.REACT_APP_API_URL?.replace("/api", "");
-    fetch(API + "/api/health").catch(() => { });
+    fetch(API + "/health").catch(() => { });
     const ping = setInterval(() => {
-      fetch(API + "/api/health").catch(() => { });
+      fetch(API + "/health").catch(() => { });
     }, 14 * 60 * 1000);
     return () => clearInterval(ping);
   }, []);
@@ -82,7 +83,7 @@ export default function App() {
   const [bills, setBills] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [dbCats, setDbCats] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   // ─── BILLING STATE ──────────────────────────────────────────────────────────
@@ -92,11 +93,10 @@ export default function App() {
   const [customerForm, setCustomerForm] = useState({ name: "", phone: "" });
   const [discount, setDiscount] = useState(0);
   const [editingBillId, setEditingBillId] = useState(null);
-  const [heldBills, setHeldBills] = useState([]);
-  const [holdCounter, setHoldCounter] = useState(1);
 
   // ─── LOAD DATA ──────────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!token) return;
     async function loadAll() {
       try {
         setLoading(true);
@@ -417,10 +417,6 @@ export default function App() {
             dbCats={dbCats}
             editingBillId={editingBillId}
             onCancelEdit={() => { setEditingBillId(null); setCart([]); setView("sales"); }}
-            heldBills={heldBills}
-            setHeldBills={setHeldBills}
-            holdCounter={holdCounter}
-            setHoldCounter={setHoldCounter}
           />
         )}
         {view === "products" && (
