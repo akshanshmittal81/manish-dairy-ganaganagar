@@ -13,4 +13,4 @@ export const CAT_COLORS = {
 };
 
 export const DEFAULT_CATS = ["Sweets", "Snacks", "Tandoor"];
-export const API = "https://manish-dairy-backend.onrender.com";
+export const API = "https://manish-dairy-backend-app.onrender.com";
