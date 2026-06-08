@@ -23,7 +23,7 @@ import { useState, useMemo,useRef, useEffect } from "react";
     cartTotal, cartSubtotal, discountAmt, discount, setDiscount,
     customerForm, setCustomerForm, checkoutBill, dbCats,
     editingBillId, onCancelEdit,
-    heldBills, setHeldBills, holdCounter, setHoldCounter,
+    heldBills=[], setHeldBills, holdCounter, setHoldCounter,
   }){
     const [popup,       setPopup]       = useState(null);
     const productGridRef = useRef(null);
