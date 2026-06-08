@@ -18,7 +18,7 @@ import { useState, useMemo,useRef, useEffect } from "react";
   }
 
   export default function BillingView({
-    products, filtered, bills, category, setCategory, search, setSearch,
+    products, filtered, bills=[], category, setCategory, search, setSearch,
     cart, setCart, addToCart, updateQty, setQtyPreset,
     cartTotal, cartSubtotal, discountAmt, discount, setDiscount,
     customerForm, setCustomerForm, checkoutBill, dbCats,
