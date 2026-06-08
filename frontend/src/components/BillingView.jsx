@@ -1,501 +1,420 @@
-import { useState, useMemo,useRef, useEffect } from "react";
-  import Icon from "./Icon";
-  import { formatINR, formatQty } from "../utils/helpers";
-  import { CAT_ICONS, CAT_COLORS } from "../utils/constants";
+import { useState, useMemo } from "react";
+import Icon from "./Icon";
+import { CAT_ICONS, CAT_COLORS } from "../utils/constants";
+import { formatINR, formatQty } from "../utils/helpers";
 
-  const popBtn = { width: 44, height: 44, borderRadius: 10, border: "1.5px solid #e5e0d8", background: "#f8f5f0", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#4a3f35", flexShrink: 0, fontSize: 18 };
+const popBtn = {
+  width: 44, height: 44, borderRadius: 10,
+  border: "1.5px solid #e5e0d8", background: "#f8f5f0",
+  cursor: "pointer", display: "flex", alignItems: "center",
+  justifyContent: "center", color: "#4a3f35", flexShrink: 0, fontSize: 18,
+};
 
-  const SIDEBAR_CATS = ["Milk","Dahi","Paneer","Namkeen","Kachori","Sweets","Amul","Snacks","Tandoor","Cookies","Dry Fruit Thal","Other","Gravy Items"];
+const CATEGORY_LIST = [
+  "Milk","Dahi","Paneer","Namkeen","Kachori","Sweets",
+  "Amul","Snacks","Tandoor","Cookies","Dry Fruit Thal","Other","Gravy Items",
+];
 
-  function useIsMobile() {
-    const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
-    useEffect(() => {
-      const handler = () => setIsMobile(window.innerWidth < 768);
-      window.addEventListener("resize", handler);
-      return () => window.removeEventListener("resize", handler);
-    }, []);
-    return isMobile;
-  }
+export default function BillingView({
+  products, filtered, bills, category, setCategory, search, setSearch,
+  cart, setCart, addToCart, updateQty, setQtyPreset,
+  cartTotal, cartSubtotal, discountAmt, discount, setDiscount,
+  customerForm, setCustomerForm, checkoutBill, dbCats,
+  editingBillId, onCancelEdit,
+}) {
+  const [popup, setPopup] = useState(null);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [paymentMode, setPaymentMode] = useState("CASH");
+  const [splitMode, setSplitMode] = useState(false);
+  const [cashAmt, setCashAmt] = useState("");
+  const [upiAmt, setUpiAmt] = useState("");
+  const [heldBills, setHeldBills] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("heldBills")) || []; } catch { return []; }
+  });
+  const [holdCounter, setHoldCounter] = useState(1);
 
-  export default function BillingView({
-    products, filtered, bills=[], category, setCategory, search, setSearch,
-    cart, setCart, addToCart, updateQty, setQtyPreset,
-    cartTotal, cartSubtotal, discountAmt, discount, setDiscount,
-    customerForm, setCustomerForm, checkoutBill, dbCats,
-    editingBillId, onCancelEdit,
-    heldBills=[], setHeldBills, holdCounter, setHoldCounter,
-  }){
-    const [popup,       setPopup]       = useState(null);
-    const productGridRef = useRef(null);
-    const [paymentMode, setPaymentMode] = useState("CASH");
-    const [splitMode, setSplitMode] = useState(false);
-    const [cashAmt, setCashAmt] = useState("");
-    const [upiAmt, setUpiAmt] = useState("");
-    const [showCart, setShowCart] = useState(false);
-    const mobile = useIsMobile();
+  const isMobile = window.innerWidth < 768;
 
-    const holdBill = () => {
-      if (!cart.length) return;
-      const name = customerForm.name || `Bill #${holdCounter}`;
-      setHoldCounter((prev) => prev + 1);
-      setHeldBills((prev) => [
-        ...prev,
-        { name, cart, customerForm, discount, paymentMode },
-      ]);
-      setCart([]);
-      setCustomerForm({ name: "", phone: "" });
-      setDiscount(0);
-      setPaymentMode("CASH");
-    };
+  const holdBill = () => {
+    if (!cart.length) return;
+    const existingHeld = heldBills.find((b) => b.name === (customerForm.name || `Bill #${holdCounter}`));
+    const name = customerForm.name || `Bill #${holdCounter}`;
+    const existingIndex = heldBills.findIndex((b) => b.name === name);
+    if (!existingHeld) setHoldCounter((prev) => prev + 1);
+    setHeldBills((prev) => {
+      const updated = existingIndex !== -1
+        ? prev.map((b, i) => i === existingIndex ? { ...b, cart, customerForm, discount, paymentMode } : b)
+        : [...prev, { name, cart, customerForm, discount, paymentMode }];
+      localStorage.setItem("heldBills", JSON.stringify(updated));
+      return updated;
+    });
+    setCart([]);
+    setCustomerForm({ name: "", phone: "" });
+    setDiscount(0);
+    setPaymentMode("CASH");
+  };
 
-    const resumeBill = (index) => {
-      const held = heldBills[index];
-      setCart(held.cart);
-      setCustomerForm(held.customerForm);
-      setDiscount(held.discount);
-      setPaymentMode(held.paymentMode);
-      setHeldBills((prev) => prev.filter((_, i) => i !== index));
-    };
+  const resumeBill = (index) => {
+    const held = heldBills[index];
+    setCart(held.cart);
+    setCustomerForm(held.customerForm);
+    setDiscount(held.discount);
+    setPaymentMode(held.paymentMode);
+    setHeldBills((prev) => {
+      const updated = prev.filter((_, i) => i !== index);
+      localStorage.setItem("heldBills", JSON.stringify(updated));
+      return updated;
+    });
+  };
 
-    // Popular items
-    const popularIds = useMemo(() => {
-      if (!bills?.length) return [];
-      const countMap = {};
-      bills.forEach((b) => b.items?.forEach((i) => { countMap[i.id] = (countMap[i.id] || 0) + 1; }));
-      return Object.entries(countMap).sort(([, a], [, b]) => b - a).slice(0, 5).map(([id]) => id);
-    }, [bills]);
+  const popularIds = useMemo(() => {
+    const countMap = {};
+    bills.forEach((b) => b.items?.forEach((i) => { countMap[i.id] = (countMap[i.id] || 0) + 1; }));
+    return Object.entries(countMap).sort(([,a],[,b]) => b - a).slice(0,5).map(([id]) => id);
+  }, [bills]);
 
-    const sortedFiltered = useMemo(() => {
-      return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
-    }, [filtered]);
+  const sortedFiltered = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const aIdx = popularIds.indexOf(a.id), bIdx = popularIds.indexOf(b.id);
+      if (aIdx === -1 && bIdx === -1) return 0;
+      if (aIdx === -1) return 1; if (bIdx === -1) return -1;
+      return aIdx - bIdx;
+    });
+  }, [filtered, popularIds]);
 
-    const openPopup = (product) => {
-      const cartId   = popup?.selectedVariation ? `${product.id}_${product.selectedVariation}` : product.id;
-      const existing = cart.find((i) => i.id === cartId);
-      setPopup({ ...product, tempQty: existing ? existing.qty : (product.unit === "piece" ? 1 : 0), tempAmt: "", selectedVariation: product.hasVariation ? (existing?.selectedVariation || null) : null });
-    };
+  const openPopup = (product) => {
+    const cartId = popup?.selectedVariation ? `${product.id}_${product.selectedVariation}` : product.id;
+    const existing = cart.find((i) => i.id === cartId);
+    setPopup({
+      ...product,
+      tempQty: existing ? existing.qty : product.unit === "piece" ? 1 : 0,
+      tempAmt: "",
+      selectedVariation: product.hasVariation ? existing?.selectedVariation || null : null,
+    });
+  };
 
-    const confirmPopup = () => {
-      if (!popup) return;
-      let qty, overrideTotal = null;
+  const confirmPopup = () => {
+    if (!popup) return;
+    let qty, overrideTotal = null;
+    if (popup.tempAmt !== "" && popup.tempAmt !== undefined && +popup.tempAmt > 0) {
+      if (popup.price > 0) qty = +((+popup.tempAmt / popup.price).toFixed(3));
+      else { qty = parseFloat(popup.tempQty) || 1; overrideTotal = +popup.tempAmt * qty; }
+    } else {
+      qty = parseFloat(popup.tempQty) || 0;
+    }
+    if (qty <= 0) { updateQty(popup.id, 0); setPopup(null); return; }
+    const cartId = popup.selectedVariation ? `${popup.id}_${popup.selectedVariation}` : popup.id;
+    const cartItem = { ...popup, cartId, id: cartId };
+    const inCart = cart.find((i) => i.id === cartId);
+    if (!inCart) addToCart(cartItem);
+    if (overrideTotal !== null) {
+      setCart((prev) => prev.map((i) => i.id === cartId ? { ...i, qty, total: overrideTotal, price: overrideTotal / qty } : i));
+    } else { updateQty(cartId, qty); }
+    setPopup(null);
+  };
 
-      if (popup.tempAmt !== "" && popup.tempAmt !== undefined && +popup.tempAmt > 0) {
-        if (popup.price > 0) {
-          qty = +((+popup.tempAmt / popup.price).toFixed(3));
-        } else {
-          qty = parseFloat(popup.tempQty) || 1;
-          overrideTotal = +popup.tempAmt * qty;
-        }
-      } else {
-        qty = parseFloat(popup.tempQty) || 0;
-      }
-
-      if (qty <= 0) { updateQty(popup.id, 0); setPopup(null); return; }
-
-      const cartId   = popup.selectedVariation ? `${popup.id}_${popup.selectedVariation}` : popup.id;
-      const cartItem = { ...popup, cartId, id: cartId };
-      const inCart   = cart.find((i) => i.id === cartId);
-      if (!inCart) addToCart(cartItem);
-
-      if (overrideTotal !== null) {
-        setCart((prev) => prev.map((i) => i.id === cartId ? { ...i, qty, total: overrideTotal, price: overrideTotal / qty } : i));
-      } else {
-        updateQty(cartId, qty);
-      }
-      setPopup(null);
-      setTimeout(() => {
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      }, 100);
-    };
-
-    // ─── Cart Panel (shared between desktop sidebar & mobile drawer) ───
-    const CartPanel = () => (
-      <div style={{ background: "#fff", borderRadius: mobile ? "18px 18px 0 0" : 18, border: "1px solid #e5e0d8", overflow: "hidden" }}>
-        <div style={{ padding: "14px 16px", background: "#1a1310", display: "flex", alignItems: "center", gap: 8 }}>
-          <Icon name="cart" size={15} />
-          <span style={{ fontSize: 14, fontWeight: 800, color: "#f59e0b" }}>Current Bill</span>
-          {cart.length > 0 && <span style={{ marginLeft: "auto", background: "#f59e0b", color: "#1a1310", borderRadius: 999, fontSize: 11, fontWeight: 900, padding: "2px 8px" }}>{cart.length}</span>}
-          {heldBills.length > 0 && <span style={{ marginLeft: 4, background: "#ef4444", color: "#fff", borderRadius: 999, fontSize: 11, fontWeight: 900, padding: "2px 8px", cursor: "pointer" }}>⏸️ {heldBills.length}</span>}
-          {mobile && (
-            <button onClick={() => setShowCart(false)} style={{ marginLeft: cart.length > 0 ? 4 : "auto", background: "none", border: "none", color: "#f59e0b", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>✕</button>
-          )}
-        </div>
-
+  // ─── CART PANEL (shared between mobile & desktop) ─────────────────────────
+  const CartPanel = (
+    <div style={{
+      background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", overflow: "hidden",
+      position: isMobile ? "relative" : "sticky", top: isMobile ? 0 : 80,
+      display: "flex", flexDirection: "column",
+      maxHeight: isMobile ? "none" : "calc(100vh - 100px)",
+      width: "100%",
+    }}>
+      {/* Header */}
+      <div style={{ padding: "14px 16px", background: "#1a1310", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+        <Icon name="cart" size={16} />
+        <span style={{ fontSize: 15, fontWeight: 800, color: "#f59e0b" }}>Current Bill</span>
+        {cart.length > 0 && (
+          <span style={{ marginLeft: "auto", background: "#f59e0b", color: "#1a1310", borderRadius: 999, fontSize: 12, fontWeight: 900, padding: "2px 10px" }}>
+            {cart.length}
+          </span>
+        )}
         {editingBillId && (
-          <div style={{ padding: "8px 12px", background: "#fef3c7", borderBottom: "1px solid #f59e0b", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 11, fontWeight: 800, color: "#92400e" }}>✏️ EDITING: {editingBillId}</span>
-            <button onClick={onCancelEdit} style={{ fontSize: 10, color: "#ef4444", background: "none", border: "none", cursor: "pointer", fontWeight: 700 }}>✕ Cancel</button>
-          </div>
+          <span style={{ fontSize: 10, fontWeight: 800, color: "#fef3c7", marginLeft: 4 }}>✏️ EDITING</span>
         )}
-
-        {/* Held Bills */}
         {heldBills.length > 0 && (
-          <div style={{ padding: "8px 12px", background: "#fff8ee", borderBottom: "1px solid #f0ebe4" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#92400e", marginBottom: 6 }}>⏸️ HELD BILLS ({heldBills.length})</div>
-            {heldBills.map((b, i) => (
-              <div key={i} onClick={() => resumeBill(i)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 8px", background: "#fff", borderRadius: 8, marginBottom: 4, cursor: "pointer", border: "1px solid #f59e0b" }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#1a1310" }}>{b.name}</span>
-                <span style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700 }}>{b.cart.length} items →</span>
-              </div>
-            ))}
-          </div>
+          <span style={{ background: "#ef4444", color: "#fff", borderRadius: 999, fontSize: 11, fontWeight: 900, padding: "2px 8px" }}>
+            ⏸️ {heldBills.length}
+          </span>
         )}
+      </div>
 
-        {/* Customer Fields */}
-        <div style={{ padding: "10px 12px", borderBottom: "1px solid #f0ebe4", display: "flex", flexDirection: "column", gap: 6 }}>
-          <input value={customerForm.name} onChange={(e) => setCustomerForm((p) => ({ ...p, name: e.target.value }))} placeholder="👤 Customer Name"
-            style={{ width: "100%", padding: "7px 10px", border: "1px solid #e5e0d8", borderRadius: 8, fontSize: 12, outline: "none", boxSizing: "border-box" }} />
-          <input value={customerForm.phone} onChange={(e) => setCustomerForm((p) => ({ ...p, phone: e.target.value }))} placeholder="📱 Phone"
-            style={{ width: "100%", padding: "7px 10px", border: "1px solid #e5e0d8", borderRadius: 8, fontSize: 12, outline: "none", boxSizing: "border-box" }} />
+      {/* Editing Banner */}
+      {editingBillId && (
+        <div style={{ padding: "8px 12px", background: "#fef3c7", borderBottom: "1px solid #f59e0b", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 11, fontWeight: 800, color: "#92400e" }}>✏️ EDITING: {editingBillId}</span>
+          <button onClick={onCancelEdit} style={{ fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer", fontWeight: 700 }}>✕ Cancel</button>
         </div>
+      )}
 
-        {/* Cart Items */}
-        <div style={{ maxHeight: mobile ? 240 : 260, overflowY: "auto" }}>
-          {cart.length === 0 && <div style={{ textAlign: "center", color: "#c9b9a8", padding: "28px 0", fontSize: 13 }}>Product select karo</div>}
-          {cart.map((item, i) => (
-            <div key={item.id} onClick={() => openPopup(item)}
-              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderTop: i > 0 ? "1px solid #f0ebe4" : "none", cursor: "pointer", transition: "background 0.1s" }}
-              onMouseEnter={(e) => e.currentTarget.style.background = "#f8f5f0"}
-              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1310", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}{item.selectedVariation ? ` (${item.selectedVariation === "half" ? "Half" : "Full"})` : ""}</div>
-                <div style={{ fontSize: 11, color: "#8a7e6e" }}>{formatQty(item.qty, item.unit)} × ₹{item.price}</div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: "#2563eb" }}>{formatINR(item.total)}</span>
-                <button onClick={(e) => { e.stopPropagation(); updateQty(item.id, 0); }} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex", alignItems: "center" }}>
-                  <Icon name="trash" size={13} />
-                </button>
-              </div>
+      {/* Held bills */}
+      {heldBills.length > 0 && (
+        <div style={{ padding: "10px 14px", background: "#fff8ee", borderBottom: "1px solid #f0ebe4", flexShrink: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#92400e", marginBottom: 6 }}>⏸️ HELD BILLS ({heldBills.length})</div>
+          {heldBills.map((b, i) => (
+            <div key={i} onClick={() => resumeBill(i)} style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "6px 10px", background: "#fff", borderRadius: 8, marginBottom: 4,
+              cursor: "pointer", border: "1px solid #f59e0b",
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1310" }}>{b.name}</span>
+              <span style={{ fontSize: 12, color: "#f59e0b", fontWeight: 700 }}>{b.cart.length} items →</span>
             </div>
           ))}
         </div>
+      )}
 
-        {/* Checkout */}
-        {cart.length > 0 && (
-          <div style={{ padding: "12px 14px", borderTop: "2px dashed #e5e0d8" }}>
-            <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-              {["CASH", "UPI"].map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => { setPaymentMode(mode); setSplitMode(false); }}
-                  style={{
-                    flex: 1,
-                    padding: "10px",
-                    borderRadius: 12,
-                    border: "2px solid",
-                    borderColor: !splitMode && paymentMode === mode ? "#f59e0b" : "#e5e0d8",
-                    background: !splitMode && paymentMode === mode ? "#1a1310" : "#fff",
-                    color: !splitMode && paymentMode === mode ? "#f59e0b" : "#8a7e6e",
-                    fontWeight: 800,
-                    fontSize: 14,
-                    cursor: "pointer",
-                  }}
-                >
-                  {mode === "CASH" ? "💵 CASH" : "📲 UPI"}
-                </button>
-              ))}
-              <button
-                onClick={() => { setSplitMode(true); setCashAmt(""); setUpiAmt(""); }}
-                style={{
-                  flex: 1,
-                  padding: "10px",
-                  borderRadius: 12,
-                  border: "2px solid",
-                  borderColor: splitMode ? "#8b5cf6" : "#e5e0d8",
-                  background: splitMode ? "#8b5cf6" : "#fff",
-                  color: splitMode ? "#fff" : "#8a7e6e",
-                  fontWeight: 800,
-                  fontSize: 14,
-                  cursor: "pointer",
-                }}
-              >
-                ✂️ SPLIT
-              </button>
-            </div>
-            {splitMode && (
-              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#8a7e6e", marginBottom: 4 }}>💵 CASH</div>
-                  <input
-                    type="number"
-                    value={cashAmt}
-                    onChange={(e) => { setCashAmt(e.target.value); setUpiAmt(Math.max(0, cartTotal - +e.target.value)); }}
-                    placeholder="0"
-                    style={{ width: "100%", padding: "8px 10px", border: "2px solid #f59e0b", borderRadius: 10, fontSize: 15, fontWeight: 800, outline: "none", boxSizing: "border-box" }}
-                  />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#8a7e6e", marginBottom: 4 }}>📲 UPI</div>
-                  <input
-                    type="number"
-                    value={upiAmt}
-                    onChange={(e) => { setUpiAmt(e.target.value); setCashAmt(Math.max(0, cartTotal - +e.target.value)); }}
-                    placeholder="0"
-                    style={{ width: "100%", padding: "8px 10px", border: "2px solid #8b5cf6", borderRadius: 10, fontSize: 15, fontWeight: 800, outline: "none", boxSizing: "border-box" }}
-                  />
-                </div>
-              </div>
-            )}
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#8a7e6e", marginBottom: 3 }}>
-              <span>Subtotal</span><span>{formatINR(cartSubtotal)}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 19, fontWeight: 900, color: "#1a1310", marginBottom: 12, borderTop: "1.5px solid #e5e0d8", paddingTop: 8, marginTop: 4 }}>
-              <span>Total</span><span style={{ color: "#2563eb" }}>{formatINR(cartTotal)}</span>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => setCart([])} style={{ width: 40, height: 42, borderRadius: 10, border: "1.5px solid #fca5a5", background: "#fff", color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Icon name="trash" size={15} />
-              </button>
-              <button onClick={holdBill} style={{ height: 42, padding: "0 14px", borderRadius: 10, background: "#f59e0b", color: "#1a1310", border: "none", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
-                ⏸️ Hold
-              </button>
-              <button onClick={() => { checkoutBill(splitMode ? `SPLIT(Cash:${cashAmt||0} UPI:${upiAmt||0})` : paymentMode); setPaymentMode("CASH"); if (mobile) setShowCart(false); }} style={{ flex: 1, height: 42, borderRadius: 10, background: "#1a1310", color: "#f59e0b", border: "none", fontWeight: 800, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <Icon name="print" size={15} /> {editingBillId ? "💾 Update Bill" : "Print & Save"}
-              </button>
-            </div>
-            {customerForm.phone && (
-              <button onClick={() => {
-                const msg = `*MANISH DAIRY*\nGanga Nagar, Meerut\n\n${cart.map((i) => `${i.name} x${formatQty(i.qty, i.unit)} = ${formatINR(i.total)}`).join("\n")}\n\nSubtotal: ${formatINR(cartSubtotal)}${discount > 0 ? `\nDiscount (${discount}%): -${formatINR(discountAmt)}` : ""}\n*TOTAL: ${formatINR(cartTotal)}*\n\nThank you! 🥛`;
-                window.open(`https://wa.me/91${customerForm.phone}?text=${encodeURIComponent(msg)}`);
-              }} style={{ marginTop: 8, width: "100%", padding: "9px", borderRadius: 10, background: "#25d366", color: "#fff", border: "none", fontWeight: 700, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <Icon name="whatsapp" size={14} /> Send on WhatsApp
-              </button>
-            )}
-          </div>
-        )}
+      {/* Customer form */}
+      <div style={{ padding: "10px 14px", borderBottom: "1px solid #f0ebe4", display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+        <input value={customerForm.name} onChange={(e) => setCustomerForm((p) => ({ ...p, name: e.target.value }))}
+          placeholder="👤 Customer Name"
+          style={{ width: "100%", padding: "10px 14px", border: "1px solid #e5e0d8", borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+        <input value={customerForm.phone} onChange={(e) => setCustomerForm((p) => ({ ...p, phone: e.target.value }))}
+          placeholder="📱 Phone"
+          style={{ width: "100%", padding: "10px 14px", border: "1px solid #e5e0d8", borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box" }} />
       </div>
-    );
 
-    return (
-      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 300px", gap: 20, alignItems: "start" }}>
-        {/* ─── Left: Category Sidebar + Product Grid ─── */}
-        <div style={{ display: "flex", gap: mobile ? 8 : 16 }}>
-          {/* Sidebar */}
-          <div style={{
-            display: "flex",
-            flexDirection: mobile ? "row" : "column",
-            gap: 3,
-            width: mobile ? "100%" : 72,
-            flexShrink: mobile ? undefined : 0,
-            maxHeight: mobile ? undefined : "calc(100vh - 160px)",
-            overflowX: mobile ? "auto" : undefined,
-            overflowY: mobile ? undefined : "auto",
-            paddingBottom: mobile ? 4 : undefined,
+      {/* Cart items */}
+      <div style={{ flex: 1, overflowY: "auto", maxHeight: isMobile ? 220 : "none" }}>
+        {cart.length === 0 && (
+          <div style={{ textAlign: "center", color: "#c9b9a8", padding: "32px 0", fontSize: 14 }}>Product select karo</div>
+        )}
+        {cart.map((item, i) => (
+          <div key={item.id} onClick={() => openPopup(item)} style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "11px 14px", borderTop: i > 0 ? "1px solid #f0ebe4" : "none", cursor: "pointer",
           }}>
-            {SIDEBAR_CATS.map((c) => (
-              <button key={c} onClick={() => setCategory(c)}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 2,
-                  padding: mobile ? "6px 10px" : "6px 4px",
-                  borderRadius: 10,
-                  border: "2px solid",
-                  borderColor: category === c ? (CAT_COLORS[c] || "#f59e0b") : "#e5e0d8",
-                  background: category === c ? (CAT_COLORS[c] || "#f59e0b") : "#fff",
-                  color: category === c ? "#fff" : "#4a3f35",
-                  fontSize: 10,
-                  fontWeight: category === c ? 800 : 500,
-                  cursor: "pointer",
-                  transition: "all 0.15s",
-                  boxShadow: category === c ? `0 4px 12px ${(CAT_COLORS[c] || "#f59e0b")}44` : "none",
-                  flexShrink: 0,
-                  whiteSpace: "nowrap",
-                  minWidth: mobile ? 60 : undefined,
-                }}>
-                <span style={{ fontSize: 16 }}>{CAT_ICONS[c] || "🏷️"}</span>
-                {c}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1310", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {item.name}{item.selectedVariation ? ` (${item.selectedVariation === "half" ? "Half" : "Full"})` : ""}
+              </div>
+              <div style={{ fontSize: 11, color: "#8a7e6e", marginTop: 2 }}>
+                {formatQty(item.qty, item.unit)} × ₹{item.price}
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <span style={{ fontSize: 14, fontWeight: 800, color: "#2563eb" }}>{formatINR(item.total)}</span>
+              <button onClick={(e) => { e.stopPropagation(); updateQty(item.id, 0); }}
+                style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex", alignItems: "center" }}>
+                <Icon name="trash" size={13} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Checkout */}
+      {cart.length > 0 && (
+        <div style={{ padding: "14px 14px", borderTop: "2px dashed #e5e0d8", flexShrink: 0 }}>
+          {/* Payment mode */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            {["CASH", "UPI"].map((mode) => (
+              <button key={mode} onClick={() => { setPaymentMode(mode); setSplitMode(false); }} style={{
+                flex: 1, padding: "9px", borderRadius: 10, border: "2px solid",
+                borderColor: !splitMode && paymentMode === mode ? "#f59e0b" : "#e5e0d8",
+                background: !splitMode && paymentMode === mode ? "#1a1310" : "#fff",
+                color: !splitMode && paymentMode === mode ? "#f59e0b" : "#8a7e6e",
+                fontWeight: 800, fontSize: 13, cursor: "pointer",
+              }}>
+                {mode === "CASH" ? "💵 CASH" : "📲 UPI"}
               </button>
             ))}
+            <button onClick={() => { setSplitMode(true); setCashAmt(""); setUpiAmt(""); }} style={{
+              flex: 1, padding: "9px", borderRadius: 10, border: "2px solid",
+              borderColor: splitMode ? "#8b5cf6" : "#e5e0d8",
+              background: splitMode ? "#8b5cf6" : "#fff",
+              color: splitMode ? "#fff" : "#8a7e6e",
+              fontWeight: 800, fontSize: 13, cursor: "pointer",
+            }}>✂️ SPLIT</button>
           </div>
 
-          {/* Product Grid — only on desktop (sidebar is above on mobile) */}
-          {!mobile && (
-            <div ref={productGridRef} style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ position: "relative", marginBottom: 14 }}>
-                <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#8a7e6e" }}><Icon name="search" size={16} /></span>
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products..."
-                  style={{ width: "100%", padding: "10px 12px 10px 36px", borderRadius: 10, border: "1px solid #e5e0d8", background: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+          {splitMode && (
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#8a7e6e", marginBottom: 4 }}>💵 CASH</div>
+                <input type="number" value={cashAmt}
+                  onChange={(e) => { setCashAmt(e.target.value); setUpiAmt(Math.max(0, cartTotal - +e.target.value)); }}
+                  placeholder="0"
+                  style={{ width: "100%", padding: "7px 10px", border: "2px solid #f59e0b", borderRadius: 10, fontSize: 14, fontWeight: 800, outline: "none", boxSizing: "border-box" }} />
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
-                {sortedFiltered.map((p) => {
-                  const inCart = cart.find((i) => i.id === p.id);
-                  return (
-                    <button key={p.id} onClick={() => openPopup(p)}
-                      style={{ background: "#fff", border: `2px solid ${inCart ? CAT_COLORS[p.category] || "#f59e0b" : "#e5e0d8"}`, borderRadius: 14, padding: "14px 12px", textAlign: "left", cursor: "pointer", transition: "all 0.15s", position: "relative", boxShadow: inCart ? `0 0 0 3px ${CAT_COLORS[p.category]}22` : "none" }}>
-                      {inCart && (
-                        <div style={{ position: "absolute", top: 8, right: 8, background: CAT_COLORS[p.category] || "#f59e0b", color: "#fff", borderRadius: 999, fontSize: 10, fontWeight: 800, padding: "2px 7px" }}>×{formatQty(inCart.qty, inCart.unit)}</div>
-                      )}
-                      <div style={{ fontSize: 22, marginBottom: 6 }}>{CAT_ICONS[p.category]}</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1310", marginBottom: 2, lineHeight: 1.3 }}>{p.name}</div>
-                      <div style={{ fontSize: 12, color: "#8a7e6e", marginBottom: 6 }}>{p.category}</div>
-                      <div style={{ fontSize: 16, fontWeight: 900, color: CAT_COLORS[p.category] || "#f59e0b" }}>
-                        ₹{p.price}<span style={{ fontSize: 10, fontWeight: 500, color: "#8a7e6e" }}>/{p.unit}</span>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#8a7e6e", marginBottom: 4 }}>📲 UPI</div>
+                <input type="number" value={upiAmt}
+                  onChange={(e) => { setUpiAmt(e.target.value); setCashAmt(Math.max(0, cartTotal - +e.target.value)); }}
+                  placeholder="0"
+                  style={{ width: "100%", padding: "7px 10px", border: "2px solid #8b5cf6", borderRadius: 10, fontSize: 14, fontWeight: 800, outline: "none", boxSizing: "border-box" }} />
               </div>
-              {filtered.length === 0 && <div style={{ textAlign: "center", color: "#8a7e6e", padding: "40px 0", fontSize: 15 }}>No products found</div>}
             </div>
           )}
-        </div>
 
-        {/* ─── Mobile: Search + Product Grid (below horizontal sidebar) ─── */}
-        {mobile && (
-          <div ref={productGridRef} style={{ minWidth: 0 }}>
-            <div style={{ position: "relative", marginBottom: 14 }}>
-              <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#8a7e6e" }}><Icon name="search" size={16} /></span>
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products..."
-                style={{ width: "100%", padding: "10px 12px 10px 36px", borderRadius: 10, border: "1px solid #e5e0d8", background: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
-              {sortedFiltered.map((p) => {
-                const inCart = cart.find((i) => i.id === p.id);
-                return (
-                  <button key={p.id} onClick={() => openPopup(p)}
-                    style={{ background: "#fff", border: `2px solid ${inCart ? CAT_COLORS[p.category] || "#f59e0b" : "#e5e0d8"}`, borderRadius: 14, padding: "12px 10px", textAlign: "left", cursor: "pointer", transition: "all 0.15s", position: "relative", boxShadow: inCart ? `0 0 0 3px ${CAT_COLORS[p.category]}22` : "none" }}>
-                    {inCart && (
-                      <div style={{ position: "absolute", top: 8, right: 8, background: CAT_COLORS[p.category] || "#f59e0b", color: "#fff", borderRadius: 999, fontSize: 10, fontWeight: 800, padding: "2px 7px" }}>×{formatQty(inCart.qty, inCart.unit)}</div>
-                    )}
-                    <div style={{ fontSize: 20, marginBottom: 4 }}>{CAT_ICONS[p.category]}</div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#1a1310", marginBottom: 2, lineHeight: 1.3 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: "#8a7e6e", marginBottom: 4 }}>{p.category}</div>
-                    <div style={{ fontSize: 14, fontWeight: 900, color: CAT_COLORS[p.category] || "#f59e0b" }}>
-                      ₹{p.price}<span style={{ fontSize: 10, fontWeight: 500, color: "#8a7e6e" }}>/{p.unit}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            {filtered.length === 0 && <div style={{ textAlign: "center", color: "#8a7e6e", padding: "40px 0", fontSize: 15 }}>No products found</div>}
-            {/* Bottom padding so FAB doesn't cover last product */}
-            <div style={{ height: 80 }} />
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#8a7e6e", marginBottom: 4 }}>
+            <span>Subtotal</span><span>{formatINR(cartSubtotal)}</span>
           </div>
-        )}
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 22, fontWeight: 900, color: "#1a1310", marginBottom: 12, borderTop: "1.5px solid #e5e0d8", paddingTop: 8, marginTop: 4 }}>
+            <span>Total</span><span style={{ color: "#2563eb" }}>{formatINR(cartTotal)}</span>
+          </div>
 
-        {/* ─── Mobile Cart FAB ─── */}
-        {mobile && (
-          <div style={{ position: "fixed", bottom: 20, right: 20, zIndex: 100 }}>
-            <button onClick={() => setShowCart(!showCart)}
-              style={{ width: 60, height: 60, borderRadius: 999, background: "#1a1310", color: "#f59e0b", border: "none", fontSize: 24, cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.3)", position: "relative" }}>
-              🛒{cart.length > 0 && <span style={{ position: "absolute", top: 0, right: 0, background: "#f59e0b", color: "#1a1310", borderRadius: 999, fontSize: 10, fontWeight: 900, padding: "2px 5px" }}>{cart.length}</span>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setCart([])} style={{ width: 44, height: 46, borderRadius: 10, border: "1.5px solid #fca5a5", background: "#fff", color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Icon name="trash" size={15} />
+            </button>
+            <button onClick={holdBill} style={{ height: 46, padding: "0 14px", borderRadius: 10, background: "#f59e0b", color: "#1a1310", border: "none", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+              ⏸️ Hold
+            </button>
+            <button onClick={() => {
+              if (isPrinting) return;
+              setIsPrinting(true);
+              checkoutBill(splitMode ? `SPLIT(Cash:${cashAmt||0} UPI:${upiAmt||0})` : paymentMode);
+              setPaymentMode("CASH");
+              setTimeout(() => setIsPrinting(false), 5000);
+            }} style={{ flex: 1, height: 46, borderRadius: 10, background: "#1a1310", color: "#f59e0b", border: "none", fontWeight: 800, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <Icon name="print" size={14} /> {isPrinting ? "⏳ Printing..." : editingBillId ? "💾 Update" : "Print & Save"}
             </button>
           </div>
-        )}
 
-        {/* ─── Mobile Cart Drawer ─── */}
-        {mobile && showCart && (
-          <>
-            <div onClick={() => setShowCart(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 300 }} />
-            <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 301, maxHeight: "85vh", overflowY: "auto", borderRadius: "18px 18px 0 0", boxShadow: "0 -8px 40px rgba(0,0,0,0.25)" }}>
-              <CartPanel />
-            </div>
-          </>
-        )}
+          {customerForm.phone && (
+            <button onClick={() => {
+              const msg = `*MANISH DAIRY*\nGanga Nagar, Meerut\n\n${cart.map((i) => `${i.name} x${formatQty(i.qty, i.unit)} = ${formatINR(i.total)}`).join("\n")}\n\nSubtotal: ${formatINR(cartSubtotal)}${discount > 0 ? `\nDiscount (${discount}%): -${formatINR(discountAmt)}` : ""}\n*TOTAL: ${formatINR(cartTotal)}*\n\nThank you! 🥛`;
+              window.open(`https://wa.me/91${customerForm.phone}?text=${encodeURIComponent(msg)}`);
+            }} style={{ marginTop: 8, width: "100%", padding: "11px", borderRadius: 10, background: "#25d366", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <Icon name="whatsapp" size={14} /> Send on WhatsApp
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
 
-        {/* ─── Desktop Cart Sidebar ─── */}
-        {!mobile && (
-          <div style={{ position: "sticky", top: 80 }}>
-            <CartPanel />
-          </div>
-        )}
+  // ─── MOBILE LAYOUT ────────────────────────────────────────────────────────
+  if (isMobile) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", overflowX: "hidden" }}>
+        {/* Category horizontal scroll */}
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
+          {CATEGORY_LIST.map((c) => (
+            <button key={c} onClick={() => setCategory(c)} style={{
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+              padding: "6px 10px", borderRadius: 10, flexShrink: 0,
+              border: "2px solid", borderColor: category === c ? (CAT_COLORS[c] || "#f59e0b") : "#e5e0d8",
+              background: category === c ? (CAT_COLORS[c] || "#f59e0b") : "#fff",
+              color: category === c ? "#fff" : "#4a3f35",
+              fontSize: 10, fontWeight: category === c ? 800 : 500, cursor: "pointer",
+            }}>
+              <span style={{ fontSize: 18 }}>{CAT_ICONS[c] || "🏷️"}</span>
+              {c}
+            </button>
+          ))}
+        </div>
 
-        {/* ─── Product Popup ─── */}
+        {/* Search */}
+        <div style={{ position: "relative" }}>
+          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#8a7e6e" }}>
+            <Icon name="search" size={15} />
+          </span>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products..."
+            style={{ width: "100%", padding: "9px 10px 9px 32px", borderRadius: 10, border: "1px solid #e5e0d8", background: "#fff", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+        </div>
+
+        {/* Product grid 2-col */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
+          {sortedFiltered.map((p) => {
+            const inCart = cart.find((i) => i.id === p.id);
+            return (
+              <button key={p.id} onClick={() => openPopup(p)} style={{
+                background: "#fff", border: `2px solid ${inCart ? CAT_COLORS[p.category] || "#f59e0b" : "#e5e0d8"}`,
+                borderRadius: 12, padding: "10px", textAlign: "left", cursor: "pointer", position: "relative",
+              }}>
+                {inCart && (
+                  <div style={{ position: "absolute", top: 6, right: 6, background: CAT_COLORS[p.category] || "#f59e0b", color: "#fff", borderRadius: 999, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>
+                    ×{formatQty(inCart.qty, inCart.unit)}
+                  </div>
+                )}
+                <div style={{ fontSize: 20, marginBottom: 4 }}>{CAT_ICONS[p.category]}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#1a1310", marginBottom: 1, lineHeight: 1.2 }}>{p.name}</div>
+                <div style={{ fontSize: 11, color: "#8a7e6e", marginBottom: 4 }}>{p.category}</div>
+                <div style={{ fontSize: 14, fontWeight: 900, color: CAT_COLORS[p.category] || "#f59e0b" }}>
+                  ₹{p.price}<span style={{ fontSize: 10, fontWeight: 500, color: "#8a7e6e" }}>/{p.unit}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {filtered.length === 0 && <div style={{ textAlign: "center", color: "#8a7e6e", padding: "30px 0", fontSize: 14 }}>No products found</div>}
+
+        {/* Cart panel below */}
+        {CartPanel}
+
+        {/* Popup */}
         {popup && (
           <>
-            <div onClick={() => setPopup(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200 }} />
-            <div style={{
-              position: "fixed",
-              top: mobile ? "auto" : "50%",
-              bottom: mobile ? 0 : "auto",
-              left: mobile ? 0 : "50%",
-              right: mobile ? 0 : "auto",
-              transform: mobile ? "none" : "translate(-50%,-50%)",
-              background: "#fff",
-              borderRadius: mobile ? "20px 20px 0 0" : 20,
-              padding: 28,
-              width: mobile ? "100%" : 340,
-              zIndex: 201,
-              boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
-              boxSizing: "border-box",
-              maxHeight: mobile ? "90vh" : undefined,
-              overflowY: mobile ? "auto" : undefined,
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 22 }}>
-                <div style={{ fontSize: 36 }}>{CAT_ICONS[popup.category]}</div>
+            <div onClick={() => setPopup(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200 }} />
+            <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "#fff", borderRadius: 20, padding: 20, width: "92vw", maxWidth: 360, zIndex: 201, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+                <div style={{ fontSize: 32 }}>{CAT_ICONS[popup.category]}</div>
                 <div>
-                  <div style={{ fontSize: 18, fontWeight: 900, color: "#1a1310" }}>{popup.name}</div>
-                  <div style={{ fontSize: 13, color: "#8a7e6e" }}>₹{popup.price} / {popup.unit}</div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: "#1a1310" }}>{popup.name}</div>
+                  <div style={{ fontSize: 12, color: "#8a7e6e" }}>₹{popup.price} / {popup.unit}</div>
                 </div>
-                <button onClick={() => setPopup(null)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#8a7e6e", padding: 4 }}>
+                <button onClick={() => setPopup(null)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#8a7e6e" }}>
                   <Icon name="close" size={20} />
                 </button>
               </div>
-
-              {/* Half / Full */}
               {popup.hasVariation && (
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#8a7e6e", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Half ya Full?</div>
-                  <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#8a7e6e", textTransform: "uppercase", marginBottom: 8 }}>Half ya Full?</div>
+                  <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={() => setPopup((p) => ({ ...p, tempQty: 1, tempAmt: "", selectedVariation: "half", price: p.halfPrice }))}
-                      style={{ flex: 1, padding: "14px", borderRadius: 12, fontWeight: 900, fontSize: 15, cursor: "pointer", border: "2px solid", borderColor: popup.selectedVariation === "half" ? "#f59e0b" : "#e5e0d8", background: popup.selectedVariation === "half" ? "#1a1310" : "#f8f5f0", color: popup.selectedVariation === "half" ? "#f59e0b" : "#4a3f35" }}>
-                      HALF<br /><span style={{ fontSize: 13, fontWeight: 700 }}>₹{popup.halfPrice}</span>
+                      style={{ flex: 1, padding: "12px", borderRadius: 10, fontWeight: 900, fontSize: 14, cursor: "pointer", border: "2px solid", borderColor: popup.selectedVariation === "half" ? "#f59e0b" : "#e5e0d8", background: popup.selectedVariation === "half" ? "#1a1310" : "#f8f5f0", color: popup.selectedVariation === "half" ? "#f59e0b" : "#4a3f35" }}>
+                      HALF<br /><span style={{ fontSize: 12 }}>₹{popup.halfPrice}</span>
                     </button>
                     <button onClick={() => setPopup((p) => ({ ...p, tempQty: 1, tempAmt: "", selectedVariation: "full", price: p.fullPrice }))}
-                      style={{ flex: 1, padding: "14px", borderRadius: 12, fontWeight: 900, fontSize: 15, cursor: "pointer", border: "2px solid", borderColor: popup.selectedVariation === "full" ? "#ef4444" : "#e5e0d8", background: popup.selectedVariation === "full" ? "#ef4444" : "#f8f5f0", color: popup.selectedVariation === "full" ? "#fff" : "#4a3f35" }}>
-                      FULL<br /><span style={{ fontSize: 13, fontWeight: 700 }}>₹{popup.fullPrice}</span>
+                      style={{ flex: 1, padding: "12px", borderRadius: 10, fontWeight: 900, fontSize: 14, cursor: "pointer", border: "2px solid", borderColor: popup.selectedVariation === "full" ? "#ef4444" : "#e5e0d8", background: popup.selectedVariation === "full" ? "#ef4444" : "#f8f5f0", color: popup.selectedVariation === "full" ? "#fff" : "#4a3f35" }}>
+                      FULL<br /><span style={{ fontSize: 12 }}>₹{popup.fullPrice}</span>
                     </button>
                   </div>
                 </div>
               )}
-
-              {/* Qty Presets */}
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#8a7e6e", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#8a7e6e", textTransform: "uppercase", marginBottom: 8 }}>
                   {popup.unit === "piece" ? "Kitne piece?" : "Kitna weight?"}
                 </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 8 }}>
                   {(popup.unit === "piece" ? [1, 2, 5, 10] : [0.25, 0.5, 1, 2]).map((p) => (
-                    <button key={p} onClick={() => setPopup((prev) => ({ ...prev, tempQty: p, tempAmt: "" }))}
-                      style={{ flex: 1, padding: "10px 0", borderRadius: 10, fontWeight: 800, fontSize: 14, cursor: "pointer", border: "2px solid", borderColor: popup.tempQty === p ? (CAT_COLORS[popup.category] || "#f59e0b") : "#e5e0d8", background: popup.tempQty === p ? (CAT_COLORS[popup.category] || "#f59e0b") : "#f8f5f0", color: popup.tempQty === p ? "#fff" : "#4a3f35" }}>
+                    <button key={p} onClick={() => setPopup((prev) => ({ ...prev, tempQty: p, tempAmt: "" }))} style={{
+                      flex: 1, padding: "9px 0", borderRadius: 10, fontWeight: 800, fontSize: 13, cursor: "pointer", border: "2px solid",
+                      borderColor: popup.tempQty === p ? (CAT_COLORS[popup.category] || "#f59e0b") : "#e5e0d8",
+                      background: popup.tempQty === p ? (CAT_COLORS[popup.category] || "#f59e0b") : "#f8f5f0",
+                      color: popup.tempQty === p ? "#fff" : "#4a3f35",
+                    }}>
                       {popup.unit === "piece" ? p : formatQty(p, popup.unit)}
                     </button>
                   ))}
                 </div>
               </div>
-
-              {/* Qty Stepper */}
-              <div style={{ display: "flex", gap: 10, marginBottom: 10, alignItems: "center" }}>
-                <button onClick={() => setPopup((p) => ({ ...p, tempQty: Math.max(0, +((+p.tempQty - (p.unit === "piece" ? 1 : 0.25)).toFixed(3))) }))} style={popBtn}><Icon name="minus" size={14} /></button>
+              <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+                <button onClick={() => setPopup((p) => ({ ...p, tempQty: Math.max(0, +((+p.tempQty - (p.unit === "piece" ? 1 : 0.25)).toFixed(3))) }))} style={popBtn}>
+                  <Icon name="minus" size={14} />
+                </button>
                 <input type="number" value={popup.tempQty} min="0" step={popup.unit === "piece" ? 1 : 0.25}
                   onChange={(e) => setPopup((p) => ({ ...p, tempQty: e.target.value, tempAmt: "" }))}
                   style={{ flex: 1, textAlign: "center", padding: "10px", border: "2px solid #e5e0d8", borderRadius: 10, fontSize: 18, fontWeight: 900, outline: "none" }} />
-                <button onClick={() => setPopup((p) => ({ ...p, tempQty: +((+p.tempQty + (p.unit === "piece" ? 1 : 0.25)).toFixed(3)) }))} style={popBtn}><Icon name="plus" size={14} /></button>
+                <button onClick={() => setPopup((p) => ({ ...p, tempQty: +((+p.tempQty + (p.unit === "piece" ? 1 : 0.25)).toFixed(3)) }))} style={popBtn}>
+                  <Icon name="plus" size={14} />
+                </button>
               </div>
-
-              {/* Amount Input */}
-              <div style={{ display: "flex", gap: 8, marginBottom: 18, alignItems: "center" }}>
-                <input type="number" value={popup.tempAmt}
-                  onChange={(e) => {
-                    const amt = e.target.value;
-                    setPopup((p) => ({ ...p, tempAmt: amt, tempQty: (amt && p.price > 0) ? +((+amt / p.price).toFixed(3)) : p.tempQty }));
-                  }}
-                  placeholder="Ya amount type karo (₹)"
-                  style={{ flex: 1, padding: "9px 12px", border: "1.5px solid #e5e0d8", borderRadius: 10, fontSize: 13, outline: "none" }} />
-              </div>
-
-              {/* Amount Display */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, background: "#f8f5f0", borderRadius: 10, padding: "10px 14px" }}>
+              <input type="number" value={popup.tempAmt}
+                onChange={(e) => { const amt = e.target.value; setPopup((p) => ({ ...p, tempAmt: amt, tempQty: amt && p.price > 0 ? +((+amt / p.price).toFixed(3)) : p.tempQty })); }}
+                placeholder="Ya amount type karo (₹)"
+                style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #e5e0d8", borderRadius: 10, fontSize: 13, outline: "none", marginBottom: 14, boxSizing: "border-box" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, background: "#f8f5f0", borderRadius: 10, padding: "10px 14px" }}>
                 <span style={{ fontSize: 13, color: "#8a7e6e", fontWeight: 600 }}>Amount</span>
                 <span style={{ fontSize: 20, fontWeight: 900, color: "#2563eb" }}>
                   {formatINR((+popup.tempQty || 0) * (popup.price > 0 ? popup.price : +popup.tempAmt || 0))}
                 </span>
               </div>
-
               <button onClick={confirmPopup} style={{ width: "100%", padding: "13px", borderRadius: 12, background: "#1a1310", color: "#f59e0b", border: "none", fontWeight: 900, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
                 <Icon name="check" size={18} /> Bill Mein Add Karo
               </button>
@@ -505,3 +424,144 @@ import { useState, useMemo,useRef, useEffect } from "react";
       </div>
     );
   }
+
+  // ─── DESKTOP LAYOUT ───────────────────────────────────────────────────────
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: 20, alignItems: "start" }}>
+      <div style={{ display: "flex", gap: 16 }}>
+        {/* Category sidebar */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, width: 110, flexShrink: 0, maxHeight: "calc(100vh - 140px)", overflowY: "auto" }}>
+          {CATEGORY_LIST.map((c) => (
+            <button key={c} onClick={() => setCategory(c)} style={{
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              gap: 2, padding: "6px 4px", borderRadius: 10, border: "2px solid",
+              borderColor: category === c ? (CAT_COLORS[c] || "#f59e0b") : "#e5e0d8",
+              background: category === c ? (CAT_COLORS[c] || "#f59e0b") : "#fff",
+              color: category === c ? "#fff" : "#4a3f35",
+              fontSize: 11, fontWeight: category === c ? 800 : 500, cursor: "pointer", transition: "all 0.15s",
+              boxShadow: category === c ? `0 4px 12px ${(CAT_COLORS[c] || "#f59e0b")}44` : "none",
+            }}>
+              <span style={{ fontSize: 16 }}>{CAT_ICONS[c] || "🏷️"}</span>{c}
+            </button>
+          ))}
+        </div>
+
+        {/* Product grid */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ position: "relative", marginBottom: 14 }}>
+            <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#8a7e6e" }}>
+              <Icon name="search" size={16} />
+            </span>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products..."
+              style={{ width: "100%", padding: "10px 12px 10px 36px", borderRadius: 10, border: "1px solid #e5e0d8", background: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12 }}>
+            {sortedFiltered.map((p) => {
+              const inCart = cart.find((i) => i.id === p.id);
+              return (
+                <button key={p.id} onClick={() => openPopup(p)} style={{
+                  background: "#fff", border: `2px solid ${inCart ? CAT_COLORS[p.category] || "#f59e0b" : "#e5e0d8"}`,
+                  borderRadius: 14, padding: "14px 12px", textAlign: "left", cursor: "pointer",
+                  transition: "all 0.15s", position: "relative",
+                  boxShadow: inCart ? `0 0 0 3px ${CAT_COLORS[p.category]}22` : "none",
+                }}>
+                  {inCart && (
+                    <div style={{ position: "absolute", top: 8, right: 8, background: CAT_COLORS[p.category] || "#f59e0b", color: "#fff", borderRadius: 999, fontSize: 11, fontWeight: 800, padding: "2px 7px" }}>
+                      ×{formatQty(inCart.qty, inCart.unit)}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 22, marginBottom: 6 }}>{CAT_ICONS[p.category]}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1310", marginBottom: 2, lineHeight: 1.3 }}>{p.name}</div>
+                  <div style={{ fontSize: 12, color: "#8a7e6e", marginBottom: 6 }}>{p.category}</div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: CAT_COLORS[p.category] || "#f59e0b" }}>
+                    ₹{p.price}<span style={{ fontSize: 11, fontWeight: 500, color: "#8a7e6e" }}>/{p.unit}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {filtered.length === 0 && <div style={{ textAlign: "center", color: "#8a7e6e", padding: "40px 0", fontSize: 15 }}>No products found</div>}
+        </div>
+      </div>
+
+      {CartPanel}
+
+      {/* Desktop Popup */}
+      {popup && (
+        <>
+          <div onClick={() => setPopup(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200 }} />
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "#fff", borderRadius: 20, padding: 28, width: 340, zIndex: 201, boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 22 }}>
+              <div style={{ fontSize: 36 }}>{CAT_ICONS[popup.category]}</div>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: "#1a1310" }}>{popup.name}</div>
+                <div style={{ fontSize: 13, color: "#8a7e6e" }}>₹{popup.price} / {popup.unit}</div>
+              </div>
+              <button onClick={() => setPopup(null)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#8a7e6e", padding: 4 }}>
+                <Icon name="close" size={20} />
+              </button>
+            </div>
+            {popup.hasVariation && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#8a7e6e", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Half ya Full?</div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={() => setPopup((p) => ({ ...p, tempQty: 1, tempAmt: "", selectedVariation: "half", price: p.halfPrice }))}
+                    style={{ flex: 1, padding: "14px", borderRadius: 12, fontWeight: 900, fontSize: 15, cursor: "pointer", border: "2px solid", borderColor: popup.selectedVariation === "half" ? "#f59e0b" : "#e5e0d8", background: popup.selectedVariation === "half" ? "#1a1310" : "#f8f5f0", color: popup.selectedVariation === "half" ? "#f59e0b" : "#4a3f35" }}>
+                    HALF<br /><span style={{ fontSize: 13, fontWeight: 700 }}>₹{popup.halfPrice}</span>
+                  </button>
+                  <button onClick={() => setPopup((p) => ({ ...p, tempQty: 1, tempAmt: "", selectedVariation: "full", price: p.fullPrice }))}
+                    style={{ flex: 1, padding: "14px", borderRadius: 12, fontWeight: 900, fontSize: 15, cursor: "pointer", border: "2px solid", borderColor: popup.selectedVariation === "full" ? "#ef4444" : "#e5e0d8", background: popup.selectedVariation === "full" ? "#ef4444" : "#f8f5f0", color: popup.selectedVariation === "full" ? "#fff" : "#4a3f35" }}>
+                    FULL<br /><span style={{ fontSize: 13, fontWeight: 700 }}>₹{popup.fullPrice}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#8a7e6e", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+                {popup.unit === "piece" ? "Kitne piece?" : "Kitna weight?"}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {(popup.unit === "piece" ? [1, 2, 5, 10] : [0.25, 0.5, 1, 2]).map((p) => (
+                  <button key={p} onClick={() => setPopup((prev) => ({ ...prev, tempQty: p, tempAmt: "" }))} style={{
+                    flex: 1, padding: "10px 0", borderRadius: 10, fontWeight: 800, fontSize: 14, cursor: "pointer", border: "2px solid",
+                    borderColor: popup.tempQty === p ? (CAT_COLORS[popup.category] || "#f59e0b") : "#e5e0d8",
+                    background: popup.tempQty === p ? (CAT_COLORS[popup.category] || "#f59e0b") : "#f8f5f0",
+                    color: popup.tempQty === p ? "#fff" : "#4a3f35",
+                  }}>
+                    {popup.unit === "piece" ? p : formatQty(p, popup.unit)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginBottom: 10, alignItems: "center" }}>
+              <button onClick={() => setPopup((p) => ({ ...p, tempQty: Math.max(0, +((+p.tempQty - (p.unit === "piece" ? 1 : 0.25)).toFixed(3))) }))} style={popBtn}>
+                <Icon name="minus" size={14} />
+              </button>
+              <input type="number" value={popup.tempQty} min="0" step={popup.unit === "piece" ? 1 : 0.25}
+                onChange={(e) => setPopup((p) => ({ ...p, tempQty: e.target.value, tempAmt: "" }))}
+                style={{ flex: 1, textAlign: "center", padding: "10px", border: "2px solid #e5e0d8", borderRadius: 10, fontSize: 18, fontWeight: 900, outline: "none" }} />
+              <button onClick={() => setPopup((p) => ({ ...p, tempQty: +((+p.tempQty + (p.unit === "piece" ? 1 : 0.25)).toFixed(3)) }))} style={popBtn}>
+                <Icon name="plus" size={14} />
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 18, alignItems: "center" }}>
+              <input type="number" value={popup.tempAmt}
+                onChange={(e) => { const amt = e.target.value; setPopup((p) => ({ ...p, tempAmt: amt, tempQty: amt && p.price > 0 ? +((+amt / p.price).toFixed(3)) : p.tempQty })); }}
+                placeholder="Ya amount type karo (₹)"
+                style={{ flex: 1, padding: "9px 12px", border: "1.5px solid #e5e0d8", borderRadius: 10, fontSize: 13, outline: "none" }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, background: "#f8f5f0", borderRadius: 10, padding: "10px 14px" }}>
+              <span style={{ fontSize: 13, color: "#8a7e6e", fontWeight: 600 }}>Amount</span>
+              <span style={{ fontSize: 20, fontWeight: 900, color: "#2563eb" }}>
+                {formatINR((+popup.tempQty || 0) * (popup.price > 0 ? popup.price : +popup.tempAmt || 0))}
+              </span>
+            </div>
+            <button onClick={confirmPopup} style={{ width: "100%", padding: "13px", borderRadius: 12, background: "#1a1310", color: "#f59e0b", border: "none", fontWeight: 900, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <Icon name="check" size={18} /> Bill Mein Add Karo
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
