@@ -54,6 +54,7 @@ router.get("/", async (req, res) => {
 // ─── POST /api/bills ──────────────────────────────────────────────────────────
 router.post("/", authMiddleware, async (req, res) => {
   console.log("RECEIVED DATE:", req.body.date);
+  console.log("FULL BODY:", JSON.stringify(req.body)); 
   try {
     const items = Array.isArray(req.body.items) ? req.body.items : [];
 
