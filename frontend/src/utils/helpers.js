@@ -5,12 +5,14 @@ export function formatINR(n) {
 export function formatDate(d) {
   return new Date(d).toLocaleDateString("en-IN", {
     day: "2-digit", month: "short", year: "numeric",
+    timeZone: "Asia/Kolkata",
   });
 }
 
 export function formatTime(d) {
   return new Date(d).toLocaleTimeString("en-IN", {
     hour: "2-digit", minute: "2-digit",
+    timeZone: "Asia/Kolkata",
   });
 }
 
