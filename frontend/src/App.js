@@ -170,7 +170,7 @@ export default function App() {
   const cartTotal = cartSubtotal - discountAmt;
 
   // ─── CHECKOUT ───────────────────────────────────────────────────────────────
-  const checkoutBill = async (paymentMode = "CASH") => {
+  const checkoutBill = async (paymentMode = "CASH", customDate = null) => {
     if (!cart.length) return;
 
     // Editing mode
@@ -188,7 +188,7 @@ export default function App() {
 
     const bill = {
       id: "MD" + Date.now(),
-      date: new Date().toISOString(),
+      date: customDate ? new Date(customDate).toISOString() : new Date().toISOString(),
       items: cart,
       subtotal: Math.round(cartSubtotal),
       discountPct: discount,

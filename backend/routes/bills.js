@@ -66,7 +66,7 @@ router.post("/", authMiddleware,async (req, res) => {
 
     const bill = await Bill.create({
       id: "MD" + Date.now(),
-      date: new Date(),
+      date: req.body.date ? new Date(req.body.date) : new Date(),
       items,
       subtotal,
       discountPct,
