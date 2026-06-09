@@ -286,6 +286,7 @@ const [showDatePicker, setShowDatePicker] = useState(false);
             <button onClick={() => {
               if (isPrinting) return;
               setIsPrinting(true);
+              console.log("customDate being passed:", customDate);
               checkoutBill(splitMode ? `SPLIT(Cash:${cashAmt||0} UPI:${upiAmt||0})` : paymentMode, customDate || null);
               setPaymentMode("CASH");
               setCustomDate("");

@@ -171,6 +171,7 @@ export default function App() {
 
   // ─── CHECKOUT ───────────────────────────────────────────────────────────────
   const checkoutBill = async (paymentMode = "CASH", customDate = null) => {
+    console.log("customDate received:", customDate);
     if (!cart.length) return;
 
     // Editing mode
