@@ -189,7 +189,7 @@ export default function App() {
 
     const bill = {
       id: "MD" + Date.now(),
-      date: customDate ? new Date(customDate).toISOString() : new Date().toISOString(),
+      date: customDate ? new Date(customDate + "T12:00:00+05:30").toISOString() : new Date().toISOString(),
       items: cart,
       subtotal: Math.round(cartSubtotal),
       discountPct: discount,
