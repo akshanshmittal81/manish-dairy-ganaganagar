@@ -171,7 +171,9 @@ export default function App() {
 
   // ─── CHECKOUT ───────────────────────────────────────────────────────────────
   const checkoutBill = async (paymentMode = "CASH", customDate = null) => {
+    console.log("=== DEBUG ===");
     console.log("customDate received:", customDate);
+    console.log("date being sent:", customDate ? new Date(customDate + "T12:00:00+05:30").toISOString() : new Date().toISOString());
     if (!cart.length) return;
 
     // Editing mode
