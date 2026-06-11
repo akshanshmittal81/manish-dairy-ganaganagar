@@ -80,7 +80,7 @@ const yesterdayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000 - 86400000).toIS
   const deleteSelected = async () => {
     if (!selected.length) return;
     const pass = prompt("Admin Password Enter Karo:");
-    if (pass !== "aniket123") { alert("❌ Wrong Password!"); return; }
+    if (pass !== "manish123") { alert("❌ Wrong Password!"); return; }
     if (!window.confirm(`${selected.length} bills delete karne hain?`)) return;
     for (const id of selected) await onDelete(id);
     setSelected([]);

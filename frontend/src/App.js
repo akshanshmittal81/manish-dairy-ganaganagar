@@ -265,7 +265,7 @@ export default function App() {
   // ─── BILL CRUD ──────────────────────────────────────────────────────────────
   const handleDeleteBill = async (id) => {
     const pass = prompt("Admin Password Enter Karo:");
-    if (pass !== "aniket123") {
+    if (pass !== "manish123") {
       alert("❌ Wrong Password!");
       return;
     }
