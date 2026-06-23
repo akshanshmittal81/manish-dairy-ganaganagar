@@ -36,12 +36,12 @@ router.get("/", async (req, res) => {
     }
 
     // ✅ Pagination — default 50, max 200
-    const limit = Math.min(parseInt(req.query.limit) || 50, 10000);
+ const limit = parseInt(req.query.limit) || 0;
     const skip = parseInt(req.query.skip) || 0;
 
     // ✅ lean() — plain JS object, ~30% faster, less memory
-    const [bills, total] = await Promise.all([
-      Bill.find(filter).sort({ date: -1 }).skip(skip).limit(limit).lean(),
+   const [bills, total] = await Promise.all([
+  Bill.find(filter).sort({ date: -1 }).skip(skip).limit(limit || 0).lean(),
       Bill.countDocuments(filter),
     ]);
 
