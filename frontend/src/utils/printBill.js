@@ -61,6 +61,7 @@ export function printBill(bill) {
   <div class="payment-row"><span>Payment:</span><span>${bill.paymentMode || "CASH"}</span></div>
 
   <div class="divider-dash"></div>
+  <div class="footer">No Tax Taken From Consumer</div>
   <div class="footer">Thank you!! Please Visit Again!</div>
   <br/>
   </body></html>`;
