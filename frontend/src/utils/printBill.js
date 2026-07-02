@@ -20,7 +20,7 @@ export function printBill(bill) {
     .header-row { font-size: 17px; font-weight: 900; color: #000; }
     .total-row { display: flex; justify-content: space-between; font-size: 18px; font-weight: 900; padding: 4px 0; color: #000; }
     .payment-row { display: flex; justify-content: space-between; font-size: 14px; font-weight: 900; padding: 2px 0; color: #000; }
-    .footer { text-align: center; font-size: 12px; margin-top: 4px; font-weight: 700; color: #000; }
+    .footer { text-align: center; font-size: 13px; margin-top: 4px; font-weight: 900; color: #000; }
     @media print { button { display: none !important; } * { color: #000 !important; } }
   </style></head><body>
 
