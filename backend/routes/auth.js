@@ -15,7 +15,7 @@ router.post("/login", async (req, res) => {
 
   const token = jwt.sign(
     { userId: user._id, shopName: user.shopName },
-    process.env.JWT_SECRET,
+    process.env.JWT_SECRET || "default-secret-key-for-manish-dairy",
     { expiresIn: "30d" }
   );
   res.json({ token, shopName: user.shopName });

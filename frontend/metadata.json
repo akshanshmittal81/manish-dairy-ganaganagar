@@ -1,0 +1,8 @@
+{
+  "name": "Manish Dairy Ganganagar",
+  "description": "A comprehensive point-of-sale (POS), billing, products, categories, and customer analytics dashboard for Manish Dairy.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
