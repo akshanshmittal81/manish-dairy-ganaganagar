@@ -1,5 +1,5 @@
 import Login from "./Login";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 
 
 // Utils
@@ -20,6 +20,16 @@ export default function App() {
   const [token, setToken] = useState(localStorage.getItem("dairy_token"));
   const [view, setView] = useState("billing");
   const [tapCount, setTapCount] = useState(0);
+
+  // Handle automatic session logout on expired/invalid token
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      setToken(null);
+      alert("Aapka session expire ho gaya hai. Kripya fir se login karein (Your session has expired. Please login again).");
+    };
+    window.addEventListener("auth_expired", handleAuthExpired);
+    return () => window.removeEventListener("auth_expired", handleAuthExpired);
+  }, []);
 
   // Admin shortcut: Ctrl+Shift+D → apply global discount
   useEffect(() => {
@@ -88,11 +98,12 @@ export default function App() {
 
   // ─── BILLING STATE ──────────────────────────────────────────────────────────
   const [cart, setCart] = useState([]);
-  const [category, setCategory] = useState("Milk");
+  const [category, setCategory] = useState("All");
   const [search, setSearch] = useState("");
   const [customerForm, setCustomerForm] = useState({ name: "", phone: "" });
   const [discount, setDiscount] = useState(0);
   const [editingBillId, setEditingBillId] = useState(null);
+  const isSubmittingBill = useRef(false);
 
   // ─── LOAD DATA ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -108,7 +119,7 @@ export default function App() {
         setDbCats(cats);
         // Bills aur customers background mein load karo
         const todayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-        apiCall("/bills?limit=10000").then(res => setBills(res.bills || res)).catch(() => { });
+        apiCall("/bills?limit=250").then(res => setBills(res.bills || res)).catch(() => { });
         apiCall("/customers").then(custs => setCustomers(custs)).catch(() => { });
       } catch (e) {
         setError(
@@ -120,6 +131,27 @@ export default function App() {
     }
     loadAll();
   }, []);
+
+  // ─── CUSTOMER AUTO-COMPLETE ──────────────────────────────────────────────────
+  useEffect(() => {
+    const phone = customerForm.phone?.trim();
+    if (phone && phone.length >= 10) {
+      const localMatch = customers.find(c => c.phone === phone);
+      if (localMatch) {
+        if (!customerForm.name) {
+          setCustomerForm(prev => ({ ...prev, name: localMatch.name }));
+        }
+      } else {
+        apiCall(`/customers/${phone}`)
+          .then(res => {
+            if (res && res.name && !customerForm.name) {
+              setCustomerForm(prev => ({ ...prev, name: res.name }));
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [customerForm.phone, customers]);
 
   // ─── FILTERED PRODUCTS ──────────────────────────────────────────────────────
   const filtered = useMemo(
@@ -176,6 +208,12 @@ export default function App() {
     console.log("date being sent:", customDate ? new Date(customDate + "T12:00:00+05:30").toISOString() : new Date().toISOString());
     if (!cart.length) return;
 
+    if (isSubmittingBill.current) {
+      console.warn("⚠️ Bill save is already in progress. Ignoring duplicate click.");
+      return;
+    }
+    isSubmittingBill.current = true;
+
     // Editing mode
     if (editingBillId) {
       const ok = await handleEditBill(editingBillId, cart, discount);
@@ -186,11 +224,13 @@ export default function App() {
         setEditingBillId(null);
         setView("sales");
       }
+      isSubmittingBill.current = false;
       return;
     }
 
+    const billId = "MD" + Date.now() + Math.floor(100 + Math.random() * 900);
     const bill = {
-      id: "MD" + Date.now(),
+      id: billId,
       date: customDate ? new Date(customDate + "T00:00:00+05:30").toISOString() : new Date().toISOString(),
       items: cart,
       subtotal: Math.round(cartSubtotal),
@@ -214,9 +254,11 @@ export default function App() {
       setCart([]);
       setCustomerForm({ name: "", phone: "" });
       setDiscount(0);
-      setCategory("Milk");
+      setCategory("All");
     } catch (e) {
       alert("Bill save karne mein error: " + e.message);
+    } finally {
+      isSubmittingBill.current = false;
     }
   };
 
@@ -265,7 +307,7 @@ export default function App() {
   // ─── BILL CRUD ──────────────────────────────────────────────────────────────
   const handleDeleteBill = async (id) => {
     const pass = prompt("Admin Password Enter Karo:");
-    if (pass !== "manish123") {
+    if (pass !== "aniket123") {
       alert("❌ Wrong Password!");
       return;
     }
@@ -443,11 +485,10 @@ export default function App() {
             onSecretTap={handleSecretTap}
           />
         )}
-        {view === "analytics" && <AnalyticsView bills={bills} />}
+        {view === "analytics" && <AnalyticsView />}
         {view === "customers" && (
           <CustomersView
             customers={customers}
-            bills={bills}
             setCart={setCart}
             setView={setView}
           />

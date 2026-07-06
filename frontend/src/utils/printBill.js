@@ -20,13 +20,13 @@ export function printBill(bill) {
     .header-row { font-size: 17px; font-weight: 900; color: #000; }
     .total-row { display: flex; justify-content: space-between; font-size: 18px; font-weight: 900; padding: 4px 0; color: #000; }
     .payment-row { display: flex; justify-content: space-between; font-size: 14px; font-weight: 900; padding: 2px 0; color: #000; }
-    .footer { text-align: center; font-size: 13px; margin-top: 4px; font-weight: 900; color: #000; }
+    .footer { text-align: center; font-size: 12px; margin-top: 4px; font-weight: 700; color: #000; }
     @media print { button { display: none !important; } * { color: #000 !important; } }
   </style></head><body>
 
   <div class="center bold big">MANISH DAIRY</div>
   <div class="center shop-sub">SWEETS AND NAMKEEN</div>
-  <div class="center shop-addr">Ganganagar, Meerut</div>
+  <div class="center shop-addr">Ganga Nagar, Meerut</div>
   <div class="divider-solid"></div>
 
   <div class="row"><span>Date:</span><span>${formatDate(bill.date)} ${formatTime(bill.date)}</span></div>
@@ -66,25 +66,15 @@ export function printBill(bill) {
   <br/>
   </body></html>`;
 
-  // Method 1: Try popup first
-  const w = window.open("", "_blank", "width=302,height=600");
-  
-  if (w && !w.closed) {
-    // Popup allowed ✅
-    w.document.write(printContent);
-    w.document.close();
-   setTimeout(() => { w.print(); w.close(); }, 100);
-  } else {
-    // Popup blocked — use iframe fallback ✅
-    const iframe = document.createElement("iframe");
-    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:302px;height:600px;border:none;";
-    document.body.appendChild(iframe);
-    iframe.contentDocument.open();
-    iframe.contentDocument.write(printContent);
-    iframe.contentDocument.close();
-   setTimeout(() => {
-  iframe.contentWindow.print();
-  setTimeout(() => document.body.removeChild(iframe), 500);
-}, 100);
-  }
+  // Always use the invisible iframe method for direct print (no preview popup window)
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:302px;height:600px;border:none;";
+  document.body.appendChild(iframe);
+  iframe.contentDocument.open();
+  iframe.contentDocument.write(printContent);
+  iframe.contentDocument.close();
+  setTimeout(() => {
+    iframe.contentWindow.print();
+    setTimeout(() => document.body.removeChild(iframe), 1000);
+  }, 150);
 }
