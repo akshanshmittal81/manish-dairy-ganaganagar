@@ -198,7 +198,15 @@ export default function ProductsView({ products, onSave, onDelete, dbCats, setDb
   );
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "320px 1fr", gap: 24, alignItems: "start" }}>
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: mobile ? "1fr" : "320px 1fr",
+      gap: 24,
+      alignItems: "stretch",
+      height: mobile ? "auto" : "100%",
+      overflow: mobile ? "visible" : "hidden",
+      flex: 1,
+    }}>
 
       {/* ─── Desktop: Form always visible ─── */}
       {!mobile && FormPanel()}
@@ -214,10 +222,16 @@ export default function ProductsView({ products, onSave, onDelete, dbCats, setDb
       )}
 
       {/* ─── Product List ─── */}
-      <div style={{ maxHeight: mobile ? "unset" : "calc(100vh - 100px)", overflowY: mobile ? "unset" : "auto", paddingRight: mobile ? 0 : 4 }}>
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        height: mobile ? "auto" : "100%",
+        overflow: mobile ? "visible" : "hidden",
+        paddingRight: mobile ? 0 : 4,
+      }}>
 
         {/* Search + Add button row */}
-        <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center", flexShrink: 0 }}>
           <div style={{ position: "relative", flex: 1 }}>
             <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#8a7e6e" }}>
               <Icon name="search" size={16} />
@@ -235,8 +249,21 @@ export default function ProductsView({ products, onSave, onDelete, dbCats, setDb
 
         {/* ─── Desktop: Table view ─── */}
         {!mobile && (
-          <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", overflow: "hidden" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 80px", padding: "10px 16px", background: "#f8f5f0", fontSize: 11, fontWeight: 700, color: "#8a7e6e", textTransform: "uppercase", letterSpacing: 0.5 }}>
+          <div style={{ flex: 1, overflowY: "auto", background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8" }}>
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 80px",
+              padding: "10px 16px",
+              background: "#f8f5f0",
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#8a7e6e",
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              position: "sticky",
+              top: 0,
+              zIndex: 10,
+            }}>
               <span>Product</span><span>Category</span><span>Sell Price</span><span>Cost</span><span>Margin</span><span>Actions</span>
             </div>
             {filtered.map((p, i) => (
@@ -267,7 +294,7 @@ export default function ProductsView({ products, onSave, onDelete, dbCats, setDb
 
         {/* ─── Mobile: Card view ─── */}
         {mobile && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, overflowY: "auto" }}>
             {filtered.map((p) => (
               <div key={p.id} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e5e0d8", padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
