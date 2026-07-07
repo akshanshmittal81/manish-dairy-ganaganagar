@@ -262,7 +262,7 @@ export default function App() {
       setCart([]);
       setCustomerForm({ name: "", phone: "" });
       setDiscount(0);
-      setCategory("All");
+      setCategory("Milk");
     } catch (e) {
       alert("Bill save karne mein error: " + e.message);
     } finally {

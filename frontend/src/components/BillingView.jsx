@@ -34,7 +34,7 @@ export default function BillingView({
         if (p.category) set.add(p.category);
       });
     }
-    return Array.from(set);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [dbCats, products]);
 
   const [customDate, setCustomDate] = useState("");
