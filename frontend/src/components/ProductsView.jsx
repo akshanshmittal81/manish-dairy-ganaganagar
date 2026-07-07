@@ -226,6 +226,7 @@ export default function ProductsView({ products, onSave, onDelete, dbCats, setDb
         display: "flex",
         flexDirection: "column",
         height: mobile ? "auto" : "100%",
+        minHeight: 0,
         overflow: mobile ? "visible" : "hidden",
         paddingRight: mobile ? 0 : 4,
       }}>
@@ -249,7 +250,7 @@ export default function ProductsView({ products, onSave, onDelete, dbCats, setDb
 
         {/* ─── Desktop: Table view ─── */}
         {!mobile && (
-          <div style={{ flex: 1, overflowY: "auto", background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8" }}>
+          <div style={{ flex: 1, overflowY: "auto", minHeight: 0, background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8" }}>
             <div style={{
               display: "grid",
               gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 80px",

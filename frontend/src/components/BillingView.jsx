@@ -137,6 +137,7 @@ const [showDatePicker, setShowDatePicker] = useState(false);
       display: "flex", flexDirection: "column",
       height: isMobile ? "auto" : "100%",
       width: "100%",
+      minHeight: 0,
     }}>
       {/* Header */}
       <div style={{ padding: "14px 16px", background: "#1a1310", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
@@ -211,7 +212,7 @@ const [showDatePicker, setShowDatePicker] = useState(false);
       </div>
 
       {/* Cart items */}
-      <div style={{ flex: 1, overflowY: "auto", maxHeight: isMobile ? 220 : "none" }}>
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0, maxHeight: isMobile ? 220 : "none" }}>
         {cart.length === 0 && (
           <div style={{ textAlign: "center", color: "#c9b9a8", padding: "32px 0", fontSize: 14 }}>Product select karo</div>
         )}
