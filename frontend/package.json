@@ -14,6 +14,12 @@
     "web-vitals": "^2.1.4",
     "xlsx": "^0.18.5"
   },
+  "overrides": {
+    "fork-ts-checker-webpack-plugin": {
+      "ajv": "^6.12.6",
+      "ajv-keywords": "^3.5.2"
+    }
+  },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",

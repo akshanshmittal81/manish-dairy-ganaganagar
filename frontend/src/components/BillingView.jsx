@@ -134,10 +134,10 @@ const [showDatePicker, setShowDatePicker] = useState(false);
   const CartPanel = (
     <div style={{
       background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", overflow: "hidden",
+      position: isMobile ? "relative" : "sticky", top: isMobile ? 0 : 80,
       display: "flex", flexDirection: "column",
-      height: isMobile ? "auto" : "100%",
+      maxHeight: isMobile ? "none" : "calc(100vh - 100px)",
       width: "100%",
-      minHeight: 0,
     }}>
       {/* Header */}
       <div style={{ padding: "14px 16px", background: "#1a1310", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
@@ -212,7 +212,7 @@ const [showDatePicker, setShowDatePicker] = useState(false);
       </div>
 
       {/* Cart items */}
-      <div style={{ flex: 1, overflowY: "auto", minHeight: 0, maxHeight: isMobile ? 220 : "none" }}>
+      <div style={{ flex: 1, overflowY: "auto", maxHeight: isMobile ? 220 : "none" }}>
         {cart.length === 0 && (
           <div style={{ textAlign: "center", color: "#c9b9a8", padding: "32px 0", fontSize: 14 }}>Product select karo</div>
         )}
@@ -315,7 +315,7 @@ const [showDatePicker, setShowDatePicker] = useState(false);
 
           {customerForm.phone && (
             <button onClick={() => {
-              const msg = `*MANISH DAIRY*\nGanga Nagar, Meerut\n\n${cart.map((i) => `${i.name} x${formatQty(i.qty, i.unit)} = ${formatINR(i.total)}`).join("\n")}\n\nSubtotal: ${formatINR(cartSubtotal)}${discount > 0 ? `\nDiscount (${discount}%): -${formatINR(discountAmt)}` : ""}\n*TOTAL: ${formatINR(cartTotal)}*\n\nThank you! 🥛`;
+              const msg = `*MANISH DAIRY*\nJail Chungi, Meerut\n\n${cart.map((i) => `${i.name} x${formatQty(i.qty, i.unit)} = ${formatINR(i.total)}`).join("\n")}\n\nSubtotal: ${formatINR(cartSubtotal)}${discount > 0 ? `\nDiscount (${discount}%): -${formatINR(discountAmt)}` : ""}\n*TOTAL: ${formatINR(cartTotal)}*\n\nThank you! 🥛`;
               window.open(`https://wa.me/91${customerForm.phone}?text=${encodeURIComponent(msg)}`);
             }} style={{ marginTop: 8, width: "100%", padding: "11px", borderRadius: 10, background: "#25d366", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               <Icon name="whatsapp" size={14} /> Send on WhatsApp
@@ -466,32 +466,10 @@ const [showDatePicker, setShowDatePicker] = useState(false);
 
   // ─── DESKTOP LAYOUT ───────────────────────────────────────────────────────
   return (
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: isMobile ? "1fr" : "1fr 420px",
-      gap: 20,
-      alignItems: "stretch",
-      height: isMobile ? "auto" : "100%",
-      overflow: isMobile ? "visible" : "hidden",
-      flex: 1,
-    }}>
-      <div style={{
-        display: "flex",
-        gap: 16,
-        height: isMobile ? "auto" : "100%",
-        overflow: isMobile ? "visible" : "hidden",
-        flex: 1,
-      }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: 20, alignItems: "start" }}>
+      <div style={{ display: "flex", gap: 16 }}>
         {/* Category sidebar */}
-        <div style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 3,
-          width: 110,
-          flexShrink: 0,
-          height: isMobile ? "auto" : "100%",
-          overflowY: "auto",
-        }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, width: 110, flexShrink: 0, maxHeight: "calc(100vh - 140px)", overflowY: "auto" }}>
           {categoryList.map((c) => (
             <button key={c} onClick={() => setCategory(c)} style={{
               display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
@@ -507,55 +485,41 @@ const [showDatePicker, setShowDatePicker] = useState(false);
           ))}
         </div>
 
-        {/* Product grid wrapper */}
-        <div style={{
-          flex: 1,
-          minWidth: 0,
-          display: "flex",
-          flexDirection: "column",
-          height: isMobile ? "auto" : "100%",
-          overflow: isMobile ? "visible" : "hidden",
-        }}>
-          <div style={{ position: "relative", marginBottom: 14, flexShrink: 0 }}>
+        {/* Product grid */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ position: "relative", marginBottom: 14 }}>
             <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#8a7e6e" }}>
               <Icon name="search" size={16} />
             </span>
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products..."
               style={{ width: "100%", padding: "10px 12px 10px 36px", borderRadius: 10, border: "1px solid #e5e0d8", background: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
           </div>
-
-          <div style={{
-            flex: 1,
-            overflowY: isMobile ? "visible" : "auto",
-            paddingRight: 4,
-          }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12, paddingBottom: 16 }}>
-              {sortedFiltered.map((p) => {
-                const inCart = cart.find((i) => i.id === p.id);
-                return (
-                  <button key={p.id} onClick={() => openPopup(p)} style={{
-                    background: "#fff", border: `2px solid ${inCart ? CAT_COLORS[p.category] || "#f59e0b" : "#e5e0d8"}`,
-                    borderRadius: 14, padding: "14px 12px", textAlign: "left", cursor: "pointer",
-                    transition: "all 0.15s", position: "relative",
-                    boxShadow: inCart ? `0 0 0 3px ${CAT_COLORS[p.category]}22` : "none",
-                  }}>
-                    {inCart && (
-                      <div style={{ position: "absolute", top: 8, right: 8, background: CAT_COLORS[p.category] || "#f59e0b", color: "#fff", borderRadius: 999, fontSize: 11, fontWeight: 800, padding: "2px 7px" }}>
-                        ×{formatQty(inCart.qty, inCart.unit)}
-                      </div>
-                    )}
-                    <div style={{ fontSize: 22, marginBottom: 6 }}>{CAT_ICONS[p.category]}</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1310", marginBottom: 2, lineHeight: 1.3 }}>{p.name}</div>
-                    <div style={{ fontSize: 12, color: "#8a7e6e", marginBottom: 6 }}>{p.category}</div>
-                    <div style={{ fontSize: 16, fontWeight: 900, color: CAT_COLORS[p.category] || "#f59e0b" }}>
-                      ₹{p.price}<span style={{ fontSize: 11, fontWeight: 500, color: "#8a7e6e" }}>/{p.unit}</span>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12 }}>
+            {sortedFiltered.map((p) => {
+              const inCart = cart.find((i) => i.id === p.id);
+              return (
+                <button key={p.id} onClick={() => openPopup(p)} style={{
+                  background: "#fff", border: `2px solid ${inCart ? CAT_COLORS[p.category] || "#f59e0b" : "#e5e0d8"}`,
+                  borderRadius: 14, padding: "14px 12px", textAlign: "left", cursor: "pointer",
+                  transition: "all 0.15s", position: "relative",
+                  boxShadow: inCart ? `0 0 0 3px ${CAT_COLORS[p.category]}22` : "none",
+                }}>
+                  {inCart && (
+                    <div style={{ position: "absolute", top: 8, right: 8, background: CAT_COLORS[p.category] || "#f59e0b", color: "#fff", borderRadius: 999, fontSize: 11, fontWeight: 800, padding: "2px 7px" }}>
+                      ×{formatQty(inCart.qty, inCart.unit)}
                     </div>
-                  </button>
-                );
-              })}
-            </div>
-            {filtered.length === 0 && <div style={{ textAlign: "center", color: "#8a7e6e", padding: "40px 0", fontSize: 15 }}>No products found</div>}
+                  )}
+                  <div style={{ fontSize: 22, marginBottom: 6 }}>{CAT_ICONS[p.category]}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1310", marginBottom: 2, lineHeight: 1.3 }}>{p.name}</div>
+                  <div style={{ fontSize: 12, color: "#8a7e6e", marginBottom: 6 }}>{p.category}</div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: CAT_COLORS[p.category] || "#f59e0b" }}>
+                    ₹{p.price}<span style={{ fontSize: 11, fontWeight: 500, color: "#8a7e6e" }}>/{p.unit}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
+          {filtered.length === 0 && <div style={{ textAlign: "center", color: "#8a7e6e", padding: "40px 0", fontSize: 15 }}>No products found</div>}
         </div>
       </div>
 
