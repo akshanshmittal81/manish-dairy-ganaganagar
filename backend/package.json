@@ -1,11 +1,10 @@
 {
-  "name": "manish-dairy",
+  "name": "manish-dairy-backend",
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "npm run build --prefix frontend",
-    "start": "node backend/server.js",
-    "dev": "npm run build --prefix frontend && node backend/server.js"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
