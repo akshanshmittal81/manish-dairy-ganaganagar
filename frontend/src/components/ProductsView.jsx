@@ -76,7 +76,15 @@ export default function ProductsView({ products, onSave, onDelete, dbCats, setDb
 
   // ─── Shared Form JSX ───
   const FormPanel = () => (
-    <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", padding: 20, position: mobile ? "relative" : "sticky", top: mobile ? "unset" : 80 }}>
+    <div style={{
+      background: "#fff",
+      borderRadius: 18,
+      border: "1px solid #e5e0d8",
+      padding: 20,
+      height: mobile ? "auto" : "100%",
+      overflowY: mobile ? "visible" : "auto",
+      boxSizing: "border-box",
+    }}>
       <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1310", marginBottom: 16 }}>
         {editing ? "✏️ Edit Product" : "➕ Add Product"}
       </div>

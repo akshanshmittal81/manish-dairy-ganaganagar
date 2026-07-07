@@ -134,9 +134,8 @@ const [showDatePicker, setShowDatePicker] = useState(false);
   const CartPanel = (
     <div style={{
       background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", overflow: "hidden",
-      position: isMobile ? "relative" : "sticky", top: isMobile ? 0 : 80,
       display: "flex", flexDirection: "column",
-      maxHeight: isMobile ? "none" : "calc(100vh - 100px)",
+      height: isMobile ? "auto" : "100%",
       width: "100%",
     }}>
       {/* Header */}
