@@ -7,8 +7,8 @@
     "backend"
   ],
   "scripts": {
-    "build": "npm run build --prefix frontend",
-    "start": "node backend/server.js",
-    "dev": "npm run build --prefix frontend && node backend/server.js"
-  }
+  "build": "react-scripts build",
+  "start": "node ../backend/server.js",
+  "dev": "react-scripts start"
+}
 }
