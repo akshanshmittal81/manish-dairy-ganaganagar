@@ -11,7 +11,7 @@ const popBtn = {
 };
 
 const CATEGORY_LIST_DEFAULT = [
-  "All", "Milk","Dahi","Paneer","Namkeen","Kachori","Sweets",
+   "Milk","Dahi","Paneer","Namkeen","Kachori","Sweets",
   "Amul","Snacks","Tandoor","Cookies","Dry Fruit Thal","Other","Gravy Items",
 ];
 
