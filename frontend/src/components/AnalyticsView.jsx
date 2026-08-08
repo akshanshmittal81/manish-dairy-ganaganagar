@@ -21,6 +21,7 @@ export default function AnalyticsView() {
 
   const isMobile = window.innerWidth < 768;
 
+  // ─── Fetch overall analytics on mount ──────────────────────────────────────
   useEffect(() => {
     async function fetchAnalytics() {
       setLoading(true);
@@ -36,6 +37,7 @@ export default function AnalyticsView() {
     fetchAnalytics();
   }, []);
 
+  // ─── Compute date range from selected period ───────────────────────────────
   const { fromDate, toDate } = useMemo(() => {
     const todayStr = getIndiaDate();
     if (period === "today") return { fromDate: todayStr, toDate: todayStr };
@@ -51,11 +53,12 @@ export default function AnalyticsView() {
       return { fromDate: first, toDate: todayStr };
     }
     if (period === "all") return { fromDate: "", toDate: "" };
-    return { fromDate: customFrom, toDate: customTo };
+    return { fromDate: customFrom, toDate: customTo }; // custom
   }, [period, customFrom, customTo]);
 
+  // ─── Fetch date-wise item report ───────────────────────────────────────────
   useEffect(() => {
-    let ignore = false;
+    let ignore = false; // 🛡️ race-condition guard
 
     async function fetchReport() {
       setReportLoading(true);
@@ -75,10 +78,10 @@ export default function AnalyticsView() {
     fetchReport();
 
     return () => {
-      ignore = true;
+      ignore = true; // jab fromDate/toDate change ho, purani request ka result ignore karo
     };
   }, [fromDate, toDate]);
-
+  // Date-wise totals from report data
   const filteredTotal = useMemo(() => reportData.reduce((s, i) => s + i.revenue, 0), [reportData]);
 
   const allCategories = useMemo(() => {
@@ -114,6 +117,7 @@ export default function AnalyticsView() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {/* KPI row */}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 10 : 16 }}>
         {[
           { label: "Today Sales", value: formatINR(today.revenue), color: "#2563eb", sub: `${today.bills} bills today` },
@@ -129,6 +133,7 @@ export default function AnalyticsView() {
         ))}
       </div>
 
+      {/* Top Selling Items - full width */}
       <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", padding: 20 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: "#1a1310", marginBottom: 16 }}>🏆 Top Selling Items</div>
         {topItems.length === 0 && <div style={{ color: "#c9b9a8", textAlign: "center", padding: "30px 0" }}>No data yet</div>}
@@ -147,6 +152,7 @@ export default function AnalyticsView() {
         </div>
       </div>
 
+      {/* Recent bills */}
       <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", overflow: "hidden" }}>
         <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e0d8", fontSize: 14, fontWeight: 800, color: "#1a1310" }}>🧾 Recent Bills</div>
         {recent.map((b, i) => (
@@ -167,6 +173,7 @@ export default function AnalyticsView() {
         {recent.length === 0 && <div style={{ textAlign: "center", color: "#c9b9a8", padding: "30px 0" }}>No bills yet. Start billing!</div>}
       </div>
 
+      {/* Date-wise Item Report */}
       <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", padding: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: "#1a1310" }}>📦 Date-wise Item Report</div>
