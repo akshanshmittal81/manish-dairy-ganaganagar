@@ -1,6 +1,14 @@
 const router = require("express").Router();
 const authMiddleware = require("../middleware/auth");
 const Bill = require("../models/Bill");
+const Customer = require("../models/Customer");
+const cache = require("../utils/cache");
+
+// Jab bhi bill create/edit/delete ho, cache saaf ho jaye
+router.use((req, res, next) => {
+  if (req.method !== "GET") res.on("finish", () => cache.clear("bills:"));
+  next();
+});
 
 
 // ─── Helper: IST date range ───────────────────────────────────────────────────
@@ -9,10 +17,16 @@ function istRange(dateStr, endDateStr) {
   const end = new Date((endDateStr || dateStr) + "T23:59:59+05:30");
   return { $gte: start, $lte: end };
 }
+function getTodayISTRange() {
+  const todayStr = new Date(Date.now() + 5.5 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  return istRange(todayStr);
+}
 
 // ─── GET /api/bills ───────────────────────────────────────────────────────────
 // Paginated + filtered bill list (no more full-collection scans)
-router.get("/", async (req, res) => {
+router.get("/", authMiddleware, async (req, res) => {
   try {
     const filter = {};
 
@@ -35,8 +49,25 @@ router.get("/", async (req, res) => {
       filter["customer.phone"] = req.query.phone;
     }
 
-    // ✅ Pagination — default 50, max 200
-    const limit = Math.min(parseInt(req.query.limit) || 50, 10000);
+
+
+    if (req.query.customerKey) {
+      const k = String(req.query.customerKey);
+      if (k.startsWith("phone:")) {
+        filter["customer.phone"] = k.slice(6);
+      } else if (k.startsWith("name:")) {
+        const nm = k.slice(5).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        filter["customer.name"] = new RegExp("^" + nm + "$", "i");
+        filter["customer.phone"] = { $in: ["", null] };
+      } else {
+        filter["customer.phone"] = { $in: ["", null] };
+        filter["customer.name"] = { $in: ["", null] };
+      }
+    }
+
+    // ✅ Pagination — default 50 for normal use, no cap when export explicitly requests all data
+    const requestedLimit = parseInt(req.query.limit) || 50;
+    const limit = req.query.noLimit === "true" ? requestedLimit : Math.min(requestedLimit, 10000);
     const skip = parseInt(req.query.skip) || 0;
 
     // ✅ lean() — plain JS object, ~30% faster, less memory
@@ -53,8 +84,7 @@ router.get("/", async (req, res) => {
 
 // ─── POST /api/bills ──────────────────────────────────────────────────────────
 router.post("/", authMiddleware, async (req, res) => {
-  console.log("RECEIVED DATE:", req.body.date);
-  console.log("FULL BODY:", JSON.stringify(req.body)); 
+  console.log("RECEIVED DATE:", req.body.date); 
   try {
     const items = Array.isArray(req.body.items) ? req.body.items : [];
 
@@ -92,6 +122,15 @@ router.post("/", authMiddleware, async (req, res) => {
         phone: req.body.customer?.phone || "",
       },
     });
+        const phone = (req.body.customer?.phone || "").trim();
+    if (phone) {
+      try {
+        const name = (req.body.customer?.name || "").trim();
+        const update = { $addToSet: { bills: bill.id } };
+        if (name) update.$set = { name };
+        await Customer.findOneAndUpdate({ phone }, update, { upsert: true });
+      } catch (e) { console.error("Customer update error:", e.message); }
+    }
 
     res.json(bill);
   } catch (err) {
@@ -101,192 +140,341 @@ router.post("/", authMiddleware, async (req, res) => {
 });
 
 // ─── POST /api/bills/apply-discount ──────────────────────────────────────────
-// ✅ FIXED: Ek hi bulkWrite query — N individual updates nahi
+// Delete COMPLETE BILLS whose combined total is approximately X%
+// of the selected date range's total sales.
+//
+// Example:
+// 400 bills = ₹20,000
+// 50% = ₹10,000 target
+// System deletes complete bills whose combined total is
+// approximately ₹10,000.
+// Individual bill items are NEVER partially deleted.
 router.post("/apply-discount", authMiddleware, async (req, res) => {
   try {
-    const { discount } = req.body;
-    const d = parseFloat(discount) / 100;
-    if (!d || d <= 0 || d >= 1)
-      return res.status(400).json({ error: "Invalid discount" });
+    const {
+      discount,
+      fromDate,
+      toDate
+    } = req.body;
 
-    // Sab bills ek saath fetch (lean — sirf zaruri fields)
-    const bills = await Bill.find({}).lean();
-    if (!bills.length) return res.json({ success: true, updated: 0 });
+    const percentage = Number(discount);
 
-    const bulkOps = bills.map((bill) => {
-      const newItems = bill.items.map((item) => {
-        const newPrice = +(item.price * (1 - d)).toFixed(2);
-        const newCost = +(item.cost * (1 - d)).toFixed(2);
-        return { ...item, price: newPrice, cost: newCost, total: +(newPrice * item.qty).toFixed(2) };
+    // ------------------------------------------------------------
+    // Validate percentage
+    // ------------------------------------------------------------
+
+    if (
+      !Number.isFinite(percentage) ||
+      percentage <= 0 ||
+      percentage >= 100
+    ) {
+      return res.status(400).json({
+        error: "Invalid percentage. Enter between 1 and 99."
       });
-
-      const newSubtotal = +newItems.reduce((s, i) => s + i.total, 0).toFixed(2);
-      const newCostTotal = +newItems.reduce((s, i) => s + i.cost * i.qty, 0).toFixed(2);
-      const newDiscAmt = +(newSubtotal * (bill.discountPct || 0) / 100).toFixed(2);
-      const newTotal = +(newSubtotal - newDiscAmt).toFixed(2);
-      const newProfit = +(newTotal - newCostTotal).toFixed(2);
-
-      return {
-        updateOne: {
-          filter: { _id: bill._id },
-          update: {
-            $set: {
-              items: newItems,
-              subtotal: newSubtotal,
-              discountAmt: newDiscAmt,
-              total: newTotal,
-              cost: newCostTotal,
-              profit: newProfit,
-              discountApplied: true,
-            },
-          },
-        },
-      };
-    });
-
-    // ✅ Ek hi DB round-trip for all updates
-    const result = await Bill.bulkWrite(bulkOps, { ordered: false });
-    res.json({ success: true, updated: result.modifiedCount });
-  } catch (err) {
-    console.error("❌ DISCOUNT ERROR:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── GET /api/bills/sales-summary ─────────────────────────────────────────────
-router.get("/sales-summary", async (req, res) => {
-  try {
-    const filter = {};
-
-    if (req.query.date && req.query.endDate) {
-      filter.date = istRange(req.query.date, req.query.endDate);
-    } else if (req.query.date) {
-      filter.date = istRange(req.query.date);
     }
 
-    if (req.query.month) {
-      const [year, month] = req.query.month.split("-").map(Number);
-      const lastDay = new Date(year, month, 0).getDate();
-      filter.date = istRange(
-        `${year}-${String(month).padStart(2, "0")}-01`,
-        `${year}-${String(month).padStart(2, "0")}-${lastDay}`
+    // ------------------------------------------------------------
+    // Validate dates
+    // ------------------------------------------------------------
+
+    if (!fromDate || !toDate) {
+      return res.status(400).json({
+        error: "From date and To date are required"
+      });
+    }
+
+    const start = new Date(
+      `${fromDate}T00:00:00+05:30`
+    );
+
+    const end = new Date(
+      `${toDate}T23:59:59+05:30`
+    );
+
+    if (
+      isNaN(start.getTime()) ||
+      isNaN(end.getTime())
+    ) {
+      return res.status(400).json({
+        error: "Invalid date"
+      });
+    }
+
+    if (start > end) {
+      return res.status(400).json({
+        error: "From date cannot be greater than To date"
+      });
+    }
+
+    // ------------------------------------------------------------
+    // Get ALL bills in selected date range
+    // ------------------------------------------------------------
+
+    const bills = await Bill.find({
+      date: {
+        $gte: start,
+        $lte: end
+      }
+    })
+      .sort({ date: 1, _id: 1 })
+      .lean();
+
+    if (!bills.length) {
+      return res.json({
+        success: true,
+        updated: 0,
+        deleted: 0,
+        deletedValue: 0,
+        totalValue: 0,
+        targetValue: 0,
+        remainingValue: 0,
+        message: "No bills found in selected date range."
+      });
+    }
+
+    // ------------------------------------------------------------
+    // Calculate TOTAL SALES of selected bills
+    // ------------------------------------------------------------
+
+    const totalValue = bills.reduce(
+      (sum, bill) =>
+        sum + (Number(bill.total) || 0),
+      0
+    );
+
+    // Example:
+    // Total = ₹20,000
+    // 50% = ₹10,000
+
+    const targetValue =
+      totalValue * (percentage / 100);
+
+    // ------------------------------------------------------------
+    // Find COMPLETE BILLS whose combined total is closest
+    // to targetValue.
+    //
+    // IMPORTANT:
+    // We NEVER modify items inside a bill.
+    // We either delete the whole bill or keep the whole bill.
+    //
+    // Greedy approach:
+    // Pick the bill which keeps the remaining target closest.
+    // ------------------------------------------------------------
+
+    const candidates = bills
+      .filter(
+        bill => Number(bill.total) > 0
+      )
+      .map(bill => ({
+        id: bill.id,
+        mongoId: bill._id,
+        total: Number(bill.total) || 0
+      }));
+
+    let selectedBills = [];
+    let selectedValue = 0;
+
+    // ------------------------------------------------------------
+    // Sort bills by value descending.
+    // This helps reach the target using fewer complete bills.
+    // ------------------------------------------------------------
+
+    candidates.sort(
+      (a, b) => b.total - a.total
+    );
+
+    for (const bill of candidates) {
+      const currentDifference =
+        Math.abs(targetValue - selectedValue);
+
+      const newDifference =
+        Math.abs(
+          targetValue -
+          (selectedValue + bill.total)
+        );
+
+      // Add bill only if it brings us closer
+      // to the target.
+      if (
+        newDifference < currentDifference
+      ) {
+        selectedBills.push(bill);
+        selectedValue += bill.total;
+      }
+
+      // If extremely close, stop.
+      if (
+        Math.abs(targetValue - selectedValue) <= 0.01
+      ) {
+        break;
+      }
+    }
+
+    // ------------------------------------------------------------
+    // SECOND PASS:
+    // Try improving the result with bills that were skipped.
+    // This helps get closer to the target.
+    // ------------------------------------------------------------
+
+    let improved = true;
+
+    while (improved) {
+      improved = false;
+
+      const selectedIds = new Set(
+        selectedBills.map(
+          bill => String(bill.mongoId)
+        )
       );
-    }
 
-    const [totals] = await Bill.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: null,
-          totalSales: { $sum: "$total" },
-          totalProfit: { $sum: "$profit" },
-          totalDiscount: { $sum: { $ifNull: ["$discountAmt", 0] } },
-          billsCount: { $sum: 1 },
-          cashSales: {
-            $sum: {
-              $cond: [
-                { $eq: [{ $ifNull: ["$paymentMode", "CASH"] }, "CASH"] },
-                "$total",
-                0
-              ]
-            }
-          },
-          cashCount: {
-            $sum: {
-              $cond: [
-                { $eq: [{ $ifNull: ["$paymentMode", "CASH"] }, "CASH"] },
-                1,
-                0
-              ]
-            }
-          },
-          upiSales: {
-            $sum: {
-              $cond: [
-                { $eq: ["$paymentMode", "UPI"] },
-                "$total",
-                0
-              ]
-            }
-          },
-          upiCount: {
-            $sum: {
-              $cond: [
-                { $eq: ["$paymentMode", "UPI"] },
-                1,
-                0
-              ]
-            }
+      const remainingCandidates =
+        candidates.filter(
+          bill =>
+            !selectedIds.has(
+              String(bill.mongoId)
+            )
+        );
+
+      const currentDifference =
+        Math.abs(
+          targetValue - selectedValue
+        );
+
+      for (const candidate of remainingCandidates) {
+        // Try adding one skipped bill
+        const addDifference =
+          Math.abs(
+            targetValue -
+            (selectedValue + candidate.total)
+          );
+
+        if (addDifference < currentDifference) {
+          selectedBills.push(candidate);
+          selectedValue += candidate.total;
+          improved = true;
+          break;
+        }
+
+        // Try replacing one selected bill
+        // with another bill.
+        for (
+          let i = 0;
+          i < selectedBills.length;
+          i++
+        ) {
+          const oldBill =
+            selectedBills[i];
+
+          const newValue =
+            selectedValue -
+            oldBill.total +
+            candidate.total;
+
+          const newDifference =
+            Math.abs(
+              targetValue - newValue
+            );
+
+          if (
+            newDifference <
+            currentDifference
+          ) {
+            selectedBills[i] = candidate;
+            selectedValue = newValue;
+            improved = true;
+            break;
           }
         }
+
+        if (improved) break;
       }
-    ]);
-
-    res.json(totals || {
-      totalSales: 0,
-      totalProfit: 0,
-      totalDiscount: 0,
-      billsCount: 0,
-      cashSales: 0,
-      cashCount: 0,
-      upiSales: 0,
-      upiCount: 0
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── GET /api/bills/item-report ───────────────────────────────────────────────
-router.get("/item-report", async (req, res) => {
-  try {
-    const { date, from, to } = req.query;
-    const filter = {};
-    if (from && to) {
-      filter.date = istRange(from, to);
-    } else if (from) {
-      filter.date = istRange(from);
-    } else if (date) {
-      filter.date = istRange(date);
     }
 
-    const report = await Bill.aggregate([
-      { $match: filter },
-      { $unwind: "$items" },
-      {
-        $group: {
-          _id: "$items.name",
-          qty: { $sum: "$items.qty" },
-          revenue: { $sum: "$items.total" },
-          unit: { $first: "$items.unit" },
-          category: { $first: { $ifNull: ["$items.category", "Other"] } }
-        }
-      },
-      { $sort: { revenue: -1 } }
-    ]);
+    // ------------------------------------------------------------
+    // Safety
+    // ------------------------------------------------------------
 
-    res.json(report.map(r => ({
-      name: r._id,
-      qty: r.qty,
-      revenue: r.revenue,
-      unit: r.unit,
-      category: r.category
-    })));
+    if (!selectedBills.length) {
+      return res.json({
+        success: true,
+        updated: 0,
+        deleted: 0,
+        deletedValue: 0,
+        totalValue,
+        targetValue,
+        remainingValue: totalValue,
+        message:
+          "Could not find suitable bills for deletion."
+      });
+    }
+
+    // ------------------------------------------------------------
+    // DELETE COMPLETE BILLS
+    // ------------------------------------------------------------
+
+    const idsToDelete =
+      selectedBills.map(
+        bill => bill.mongoId
+      );
+
+    const deleteResult =
+      await Bill.deleteMany({
+        _id: {
+          $in: idsToDelete
+        }
+      });
+
+    const deletedValue =
+      +selectedValue.toFixed(2);
+
+    const remainingValue =
+      +(totalValue - deletedValue).toFixed(2);
+
+    console.log(
+      `🗑️ COMPLETE BILL DELETION`,
+      `| ${percentage}%`,
+      `| ${fromDate} → ${toDate}`,
+      `| Total: ₹${totalValue.toFixed(2)}`,
+      `| Target: ₹${targetValue.toFixed(2)}`,
+      `| Deleted: ₹${deletedValue.toFixed(2)}`,
+      `| Bills: ${deleteResult.deletedCount}`,
+      `| Remaining: ₹${remainingValue.toFixed(2)}`
+    );
+
+    res.json({
+      success: true,
+
+      updated: deleteResult.deletedCount,
+      deleted: deleteResult.deletedCount,
+
+      deletedValue,
+      totalValue: +totalValue.toFixed(2),
+      targetValue: +targetValue.toFixed(2),
+      remainingValue,
+
+      percentage,
+      fromDate,
+      toDate
+    });
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(
+      "❌ COMPLETE BILL DELETION ERROR:",
+      err
+    );
+
+    res.status(500).json({
+      error: err.message
+    });
   }
 });
 
-// Helper for today range in IST
-function getTodayISTRange() {
-  const now = new Date();
-  const istStr = new Date(now.getTime() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  return istRange(istStr);
-}
-
 // ─── GET /api/bills/analytics ─────────────────────────────────────────────────
-router.get("/analytics", async (req, res) => {
+router.get("/analytics", authMiddleware, async (req, res) => {
   try {
+    const cached = cache.get("bills:analytics");
+    if (cached) return res.json(cached);
+
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1;
@@ -359,33 +547,230 @@ router.get("/analytics", async (req, res) => {
       Bill.find({}).sort({ date: -1 }).limit(20).lean()
     ]);
 
-    res.json({
+    const payload = {
       today: todayRaw[0] || { revenue: 0, profit: 0, bills: 0 },
       allTime: allTimeRaw[0] || { revenue: 0, profit: 0, bills: 0 },
       daily: dailyRaw,
       topItems: topItemsRaw,
       recent: recentRaw
-    });
+    };
+    cache.set("bills:analytics", payload, 60 * 1000);
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+// ─── GET /api/bills/item-report ───────────────────────────────────────────────
+router.get("/item-report", authMiddleware, async (req, res) => {
+  try {
+    const cacheKey = "bills:item-report:" + req.originalUrl;
+    const cachedReport = cache.get(cacheKey);
+    if (cachedReport) return res.json(cachedReport);
 
+    const { from, to } = req.query;
+    const match = {};
+    if (from && to) match.date = istRange(from, to);
+
+    const data = await Bill.aggregate([
+      { $match: match },
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: "$items.name",
+          category: { $first: "$items.category" },
+          unit: { $first: "$items.unit" },
+          qty: { $sum: "$items.qty" },
+          revenue: { $sum: "$items.total" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          name: "$_id",
+          category: 1,
+          unit: 1,
+          qty: 1,
+          revenue: 1,
+        },
+      },
+      { $sort: { revenue: -1 } },
+    ]);
+
+    cache.set(cacheKey, data, 60 * 1000);
+    res.json(data);
+  } catch (err) {
+    console.error("❌ ITEM REPORT ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+// ─── DELETE /api/bills/delete-by-date ────────────────────────────────────────
+// Delete bills only from selected date range
+router.delete("/delete-by-date", authMiddleware, async (req, res) => {
+  try {
+    const { fromDate, toDate } = req.body;
+
+    if (!fromDate || !toDate) {
+      return res.status(400).json({
+        error: "From date and To date are required"
+      });
+    }
+
+    const start = new Date(`${fromDate}T00:00:00+05:30`);
+    const end = new Date(`${toDate}T23:59:59+05:30`);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({
+        error: "Invalid date"
+      });
+    }
+
+    if (start > end) {
+      return res.status(400).json({
+        error: "From date cannot be greater than To date"
+      });
+    }
+
+    const result = await Bill.deleteMany({
+      date: {
+        $gte: start,
+        $lte: end
+      }
+    });
+
+    console.log(
+      `🗑️ Deleted ${result.deletedCount} bills | ${fromDate} → ${toDate}`
+    );
+
+    res.json({
+      success: true,
+      deleted: result.deletedCount,
+      fromDate,
+      toDate
+    });
+
+  } catch (err) {
+    console.error("❌ DELETE BY DATE ERROR:", err);
+
+    res.status(500).json({
+      error: err.message
+    });
+  }
+});
 // ─── DELETE /api/bills/all ────────────────────────────────────────────────────
+// Delete ALL bills
 router.delete("/all", authMiddleware, async (req, res) => {
   try {
-    const { confirmCode } = req.body;
-    if (confirmCode !== process.env.DELETE_ALL_CODE)
-      return res.status(403).json({ error: "❌ Wrong confirm code!" });
-    await Bill.deleteMany({});
-    res.json({ success: true });
+    const result = await Bill.deleteMany({});
+
+    console.log(
+      `🗑️ ALL BILLS DELETED: ${result.deletedCount}`
+    );
+
+    res.json({
+      success: true,
+      deleted: result.deletedCount
+    });
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("❌ DELETE ALL ERROR:", err);
+
+    res.status(500).json({
+      error: err.message
+    });
+  }
+});
+// ─── GET /api/bills/sales-summary ────────────────────────────────────────────
+// SalesView ke KPI cards ke liye summary
+router.get("/sales-summary", authMiddleware, async (req, res) => {
+  try {
+    const cacheKey = "bills:summary:" + req.originalUrl;
+    const cachedSummary = cache.get(cacheKey);
+    if (cachedSummary) return res.json(cachedSummary);
+
+    const filter = {};
+
+    // Date filter
+    if (req.query.date && req.query.endDate) {
+      filter.date = istRange(req.query.date, req.query.endDate);
+    } else if (req.query.date) {
+      filter.date = istRange(req.query.date);
+    }
+
+    // Month filter
+    if (req.query.month) {
+      const [year, month] = req.query.month.split("-").map(Number);
+      const lastDay = new Date(year, month, 0).getDate();
+
+      filter.date = istRange(
+        `${year}-${String(month).padStart(2, "0")}-01`,
+        `${year}-${String(month).padStart(2, "0")}-${lastDay}`
+      );
+    }
+
+    const bills = await Bill.find(filter)
+      .select("total profit discountAmt paymentMode")
+      .lean();
+
+    let totalSales = 0;
+    let totalProfit = 0;
+    let totalDiscount = 0;
+
+    let cashSales = 0;
+    let cashCount = 0;
+
+    let upiSales = 0;
+    let upiCount = 0;
+
+    for (const bill of bills) {
+      const total = Number(bill.total) || 0;
+      const profit = Number(bill.profit) || 0;
+      const discount = Number(bill.discountAmt) || 0;
+
+      totalSales += total;
+      totalProfit += profit;
+      totalDiscount += discount;
+
+      const paymentMode = bill.paymentMode || "CASH";
+
+      if (paymentMode.startsWith("SPLIT")) {
+        const m = paymentMode.match(/Cash:([\d.]+)\s+UPI:([\d.]+)/i);
+        cashSales += m ? Number(m[1]) : total;
+        upiSales += m ? Number(m[2]) : 0;
+        cashCount++;
+        upiCount++;
+      } else if (paymentMode === "UPI") {
+        upiSales += total;
+        upiCount++;
+      } else {
+        cashSales += total;
+        cashCount++;
+      }
+    }
+
+    const out = {
+      totalSales,
+      totalProfit,
+      totalDiscount,
+      billsCount: bills.length,
+      cashSales,
+      cashCount,
+      upiSales,
+      upiCount
+    };
+    cache.set(cacheKey, out, 30 * 1000);
+    res.json(out);
+
+  } catch (err) {
+    console.error("❌ SALES SUMMARY ERROR:", err);
+
+    res.status(500).json({
+      error: err.message
+    });
   }
 });
 
 // ─── PUT /api/bills/:id ───────────────────────────────────────────────────────
-router.put("/:id", async (req, res) => {
+router.put("/:id", authMiddleware, async (req, res) => {
   try {
     const bill = await Bill.findOne({ id: req.params.id });
     if (!bill) return res.status(404).json({ error: "Bill not found" });
@@ -393,9 +778,10 @@ router.put("/:id", async (req, res) => {
     const items = Array.isArray(req.body.items) ? req.body.items : bill.items;
     const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
     const cost = items.reduce((s, i) => s + i.cost * i.qty, 0);
-    const discountPct = Number(req.body.discountPct) ?? bill.discountPct;
-    const discountAmt = (subtotal * discountPct) / 100;
-    const total = subtotal - discountAmt;
+    const keepDiscount = bill.discountApplied;
+    const discountPct = keepDiscount ? bill.discountPct : (Number(req.body.discountPct) || 0);
+    const discountAmt = keepDiscount ? bill.discountAmt : (subtotal * discountPct) / 100;
+    const total = keepDiscount ? subtotal : subtotal - discountAmt;
     const profit = 0; // Cost is equal to selling price, profit is 0% as requested
 
     Object.assign(bill, { items, subtotal, discountPct, discountAmt, total, cost, profit });
@@ -407,7 +793,7 @@ router.put("/:id", async (req, res) => {
 });
 
 // ─── DELETE /api/bills/:id ────────────────────────────────────────────────────
-router.delete("/:id", async (req, res) => {
+router.delete("/:id",authMiddleware, async (req, res) => {
   try {
     await Bill.findOneAndDelete({ id: req.params.id });
     res.json({ success: true });
@@ -417,7 +803,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // ─── GET /api/bills/:id ───────────────────────────────────────────────────────
-router.get("/:id", async (req, res) => {
+router.get("/:id", authMiddleware, async (req, res) => {
   try {
     const bill = await Bill.findOne({ id: req.params.id }).lean();
     if (!bill) return res.status(404).json({ error: "Bill not found" });

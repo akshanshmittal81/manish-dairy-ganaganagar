@@ -1,26 +1,35 @@
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import Login from "./Login";
-import { useState, useEffect, useMemo, useRef } from "react";
 
-
-// Utils
-import { apiCall } from "./utils/api";
+import { apiCall, prefetchApi } from "./utils/api";
 import { today } from "./utils/helpers";
 import { printBill } from "./utils/printBill";
-
-// Components
 import Navbar from "./components/Navbar";
+
+// Direct component imports for instant 0ms tab switching
 import BillingView from "./components/BillingView";
 import ProductsView from "./components/ProductsView";
 import SalesView from "./components/SalesView";
 import AnalyticsView from "./components/AnalyticsView";
 import CustomersView from "./components/CustomersView";
-
+import { queueBill, syncPending, getPending } from "./utils/offlineQueue";
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem("dairy_token"));
   const [view, setView] = useState("billing");
+  const [visitedViews, setVisitedViews] = useState(() => new Set(["billing"]));
   const [tapCount, setTapCount] = useState(0);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  // Keep track of visited views for instant keep-alive switching
+  useEffect(() => {
+    setVisitedViews((prev) => {
+      if (prev.has(view)) return prev;
+      const next = new Set(prev);
+      next.add(view);
+      return next;
+    });
+  }, [view]);
 
   // Track responsive screen size
   useEffect(() => {
@@ -39,64 +48,353 @@ export default function App() {
     return () => window.removeEventListener("auth_expired", handleAuthExpired);
   }, []);
 
-  // Admin shortcut: Ctrl+Shift+D → apply global discount
-  useEffect(() => {
-    
-    const handleKey = async (e) => {
-      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d") {
-        const pass = prompt("Enter Admin Password");
-        if (pass === "aniket123") {
-          const discount = prompt("Enter Global Discount %");
-          const confirmApply = window.confirm(
-            "Are you sure? This will apply discount permanently."
-          );
-          if (confirmApply) {
-            await apiCall("/bills/apply-discount", "POST", {
-              discount: Number(discount),
-            });
-            alert("Discount applied to existing data");
-            window.location.reload();
-          }
-        }
-      }
+  // ─── ADMIN SHORTCUTS ────────────────────────────────────────────────────────
+  // Ctrl + Shift + D → Discount
+  // Ctrl + Shift + X → Delete
 
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, []);
-  useEffect(() => {
-    const API = process.env.REACT_APP_API_URL?.replace("/api", "");
-    fetch(API + "/health").catch(() => { });
-    const ping = setInterval(() => {
-      fetch(API + "/health").catch(() => { });
-    }, 14 * 60 * 1000);
-    return () => clearInterval(ping);
-  }, []);
+ const triggerDiscount = async () => {
+  const pass = prompt("Enter Admin Password");
 
-  const triggerDiscount = async () => {
-    const pass = prompt("Enter Admin Password");
-    if (pass === "aniket123") {
-      const discount = prompt("Enter Global Discount %");
-      const confirmApply = window.confirm("Are you sure? This will apply discount permanently.");
-      if (confirmApply) {
-        await apiCall("/bills/apply-discount", "POST", { discount: Number(discount) });
-        alert("Discount applied to existing data");
-        window.location.reload();
-      }
-    }
-  };
+  if (pass !== "aniket123") {
+    alert("❌ Wrong Password!");
+    return;
+  }
 
-  const handleSecretTap = () => {
-    setTapCount(prev => {
-      const newCount = prev + 1;
-      if (newCount >= 3) {
-        triggerDiscount();
-        return 0;
-      }
-      return newCount;
+  const fromDate = prompt(
+    "Enter FROM Date (YYYY-MM-DD)\nExample: 2026-09-01"
+  );
+
+  if (!fromDate) return;
+
+  const toDate = prompt(
+    "Enter TO Date (YYYY-MM-DD)\nExample: 2026-09-30"
+  );
+
+  if (!toDate) return;
+
+  const percentage = prompt(
+    "Enter Item Removal %\n\n" +
+    "Example: 50 = selected date range ke total item value ka 50% remove hoga."
+  );
+
+  const percentageNumber = Number(percentage);
+
+  if (
+    !percentage ||
+    !Number.isFinite(percentageNumber) ||
+    percentageNumber <= 0 ||
+    percentageNumber >= 100
+  ) {
+    alert("❌ Invalid percentage");
+    return;
+  }
+
+  const confirmApply = window.confirm(
+    `⚠️ REMOVE ITEMS BY VALUE\n\n` +
+    `Percentage: ${percentageNumber}%\n` +
+    `From: ${fromDate}\n` +
+    `To: ${toDate}\n\n` +
+    `Selected date range ke total item value ka approximately ` +
+    `${percentageNumber}% items/quantity remove hoga.\n\n` +
+    `Ye monetary discount NAHI hai.\n` +
+    `Continue?`
+  );
+
+  if (!confirmApply) return;
+
+  try {
+    const result = await apiCall("/bills/apply-discount", "POST", {
+      discount: percentageNumber,
+      fromDate,
+      toDate
     });
-  };
-  // ─── DATA STATE ─────────────────────────────────────────────────────────────
+
+    alert(
+  `✅ Bills Deleted Successfully!\n\n` +
+  `Target: ${percentageNumber}%\n` +
+  `Date: ${fromDate} → ${toDate}\n\n` +
+  `Total Sales: ₹${Number(result.totalValue || 0).toFixed(2)}\n` +
+  `Target Value: ₹${Number(result.targetValue || 0).toFixed(2)}\n` +
+  `Deleted Bills: ${result.deleted || 0}\n` +
+  `Deleted Value: ₹${Number(result.deletedValue || 0).toFixed(2)}\n` +
+  `Remaining Value: ₹${Number(result.remainingValue || 0).toFixed(2)}`
+);
+
+    window.location.reload();
+  } catch (error) {
+    alert("❌ Items remove nahi hue: " + error.message);
+  }
+};
+
+const triggerDelete = async () => {
+  const pass = prompt("Enter Admin Password");
+
+  if (pass !== "aniket123") {
+    alert("❌ Wrong Password!");
+    return;
+  }
+
+  const action = prompt(
+    "DELETE OPTION:\n\n" +
+    "1 = Delete selected items from a bill\n" +
+    "2 = Delete complete single bill\n\n" +
+    "Enter 1 or 2:"
+  );
+
+  if (!action) return;
+
+  // =========================================================
+  // 1 = DELETE SELECTED ITEMS FROM BILL
+  // =========================================================
+  if (action === "1") {
+    const tokenNumber = prompt(
+      "Enter Token Number\n\nExample: 356"
+    );
+
+    if (!tokenNumber) return;
+
+    try {
+      const result = await apiCall("/bills?limit=10000");
+      const allBills = result.bills || result || [];
+
+      const bill = allBills.find(
+        (b) =>
+          String(b.id?.slice(-3)) ===
+          String(tokenNumber).padStart(3, "0")
+      );
+
+      if (!bill) {
+        alert(`❌ Token ${tokenNumber} ka bill nahi mila.`);
+        return;
+      }
+
+      if (!bill.items || bill.items.length === 0) {
+        alert("❌ Is bill mein koi item nahi hai.");
+        return;
+      }
+
+      const itemList = bill.items
+        .map(
+          (item, index) =>
+            `${index + 1}. ${item.name} | Qty: ${item.qty} | ₹${item.total}`
+        )
+        .join("\n");
+
+      const itemInput = prompt(
+        `TOKEN: ${tokenNumber}\n\n` +
+        `ITEMS:\n${itemList}\n\n` +
+        `Delete karne wale item numbers enter karo.\n` +
+        `Example: 1,3`
+      );
+
+      if (!itemInput) return;
+
+      const indexes = itemInput
+        .split(",")
+        .map((x) => Number(x.trim()) - 1)
+        .filter(
+          (x) =>
+            Number.isInteger(x) &&
+            x >= 0 &&
+            x < bill.items.length
+        );
+
+      if (!indexes.length) {
+        alert("❌ Invalid item number.");
+        return;
+      }
+
+      const uniqueIndexes = [...new Set(indexes)];
+
+      const deletedItems = uniqueIndexes.map(
+        (index) => bill.items[index]
+      );
+
+      const remainingItems = bill.items.filter(
+        (_, index) => !uniqueIndexes.includes(index)
+      );
+
+      // Last item ko item-delete se remove mat karo
+      if (remainingItems.length === 0) {
+        alert(
+          "❌ Saare items delete nahi kar sakte.\n\n" +
+          "Agar poora bill delete karna hai to option 2 use karo."
+        );
+        return;
+      }
+
+      const deletedList = deletedItems
+        .map(
+          (item) =>
+            `• ${item.name} - ₹${item.total}`
+        )
+        .join("\n");
+
+      const confirmDelete = window.confirm(
+        `⚠️ CONFIRM ITEM DELETE\n\n` +
+        `Token: ${tokenNumber}\n\n` +
+        `Delete hone wale items:\n` +
+        `${deletedList}\n\n` +
+        `Remaining Items: ${remainingItems.length}\n\n` +
+        `Continue?`
+      );
+
+      if (!confirmDelete) return;
+
+      const updated = await apiCall(
+        `/bills/${bill.id}`,
+        "PUT",
+        {
+          items: remainingItems,
+          discountPct: bill.discountPct || 0,
+        }
+      );
+
+      setBills((prev) =>
+        prev.map((b) =>
+          b.id === bill.id ? updated : b
+        )
+      );
+
+      alert(
+        `✅ Items Deleted!\n\n` +
+        `Token: ${tokenNumber}\n` +
+        `Deleted: ${deletedItems.length} item(s)\n` +
+        `Remaining: ${remainingItems.length} item(s)\n` +
+        `New Total: ₹${Math.round(updated.total)}`
+      );
+
+      window.location.reload();
+
+    } catch (error) {
+      console.error(
+        "❌ TOKEN ITEM DELETE ERROR:",
+        error
+      );
+
+      alert(
+        "❌ Item delete nahi hua: " +
+        error.message
+      );
+    }
+
+    return;
+  }
+
+  // =========================================================
+  // 2 = DELETE COMPLETE SINGLE BILL
+  // =========================================================
+  if (action === "2") {
+    const tokenNumber = prompt(
+      "Enter Token Number\n\nExample: 356"
+    );
+
+    if (!tokenNumber) return;
+
+    try {
+      const result = await apiCall("/bills?limit=10000");
+      const allBills = result.bills || result || [];
+
+      const bill = allBills.find(
+        (b) =>
+          String(b.id?.slice(-3)) ===
+          String(tokenNumber).padStart(3, "0")
+      );
+
+      if (!bill) {
+        alert(`❌ Token ${tokenNumber} ka bill nahi mila.`);
+        return;
+      }
+
+      const itemCount = bill.items?.length || 0;
+      const total = Math.round(Number(bill.total) || 0);
+
+      const confirmDelete = window.confirm(
+        `⚠️ DELETE COMPLETE BILL\n\n` +
+        `Token: ${tokenNumber}\n` +
+        `Items: ${itemCount}\n` +
+        `Total: ₹${total}\n\n` +
+        `⚠️ Poora bill permanently delete ho jayega.\n\n` +
+        `Continue?`
+      );
+
+      if (!confirmDelete) return;
+
+      // Final confirmation
+      const finalConfirm = window.confirm(
+        `🚨 FINAL CONFIRMATION\n\n` +
+        `Token ${tokenNumber} ka POORA BILL DELETE karna hai?\n\n` +
+        `YES = Permanently Delete`
+      );
+
+      if (!finalConfirm) return;
+
+      await apiCall(
+        `/bills/${bill.id}`,
+        "DELETE"
+      );
+
+      setBills((prev) =>
+        prev.filter((b) => b.id !== bill.id)
+      );
+
+      alert(
+        `✅ Bill Deleted Successfully!\n\n` +
+        `Token: ${tokenNumber}\n` +
+        `Amount: ₹${total}`
+      );
+
+      window.location.reload();
+
+    } catch (error) {
+      console.error(
+        "❌ SINGLE BILL DELETE ERROR:",
+        error
+      );
+
+      alert(
+        "❌ Bill delete nahi hua: " +
+        error.message
+      );
+    }
+
+    return;
+  }
+
+  alert("❌ Invalid option. Sirf 1 ya 2 enter karo.");
+};
+
+  useEffect(() => {
+    const handleKey = (e) => {
+
+      // Ctrl + Shift + D
+      if (
+        e.ctrlKey &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "d"
+      ) {
+        e.preventDefault();
+        triggerDiscount();
+        return;
+      }
+
+      // Ctrl + Shift + X
+      if (
+        e.ctrlKey &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "x"
+      ) {
+        e.preventDefault();
+        triggerDelete();
+      }
+    };
+
+    window.addEventListener("keydown", handleKey);
+
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, []);  // ─── DATA STATE ─────────────────────────────────────────────────────────────
   const [products, setProducts] = useState([]);
   const [bills, setBills] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -114,6 +412,35 @@ export default function App() {
   const isSubmittingBill = useRef(false);
 
   // ─── LOAD DATA ──────────────────────────────────────────────────────────────
+  const [pending, setPending] = useState(() => getPending().length);
+  const [online, setOnline] = useState(navigator.onLine);
+
+  // products/categories ka local backup
+  useEffect(() => {
+    if (products.length) localStorage.setItem("cache_products", JSON.stringify(products));
+  }, [products]);
+  useEffect(() => {
+    if (dbCats.length) localStorage.setItem("cache_categories", JSON.stringify(dbCats));
+  }, [dbCats]);
+
+  // offline queue sync
+  useEffect(() => {
+    const upd = () => setPending(getPending().length);
+    const goOnline = () => { setOnline(true); syncPending(); };
+    const goOffline = () => setOnline(false);
+    window.addEventListener("offline_queue_changed", upd);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    const iv = setInterval(() => { if (getPending().length) syncPending(); }, 20000);
+    if (token) syncPending();
+    return () => {
+      window.removeEventListener("offline_queue_changed", upd);
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+      clearInterval(iv);
+    };
+  }, [token]);
+
   useEffect(() => {
     if (!token) return;
     async function loadAll() {
@@ -125,21 +452,36 @@ export default function App() {
         ]);
         setProducts(prods);
         setDbCats(cats);
-        // Bills aur customers background mein load karo
-        const todayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-        apiCall("/bills?limit=250").then(res => setBills(res.bills || res)).catch(() => { });
-        apiCall("/customers").then(custs => setCustomers(custs)).catch(() => { });
       } catch (e) {
-        setError(
-          "Server se connect nahi ho paya. Backend chal raha hai? " + e.message
-        );
+        const cp = localStorage.getItem("cache_products");
+        if (cp) {
+          setProducts(JSON.parse(cp));
+          setDbCats(JSON.parse(localStorage.getItem("cache_categories") || "[]"));
+        } else {
+          setError("Server se connect nahi ho paya. Backend chal raha hai? " + e.message);
+        }
       } finally {
         setLoading(false);
       }
     }
     loadAll();
-  }, []);
-
+  }, [token]);
+  useEffect(() => {
+    if (token && view === "customers")
+      apiCall("/customers").then(setCustomers).catch(() => {});
+  }, [view, token]);
+  useEffect(() => {
+    if (!token) return;
+    const todayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const t = setTimeout(() => {
+      prefetchApi(`/bills/sales-summary?date=${todayIST}`);
+      prefetchApi(`/bills?date=${todayIST}&limit=150`);
+      prefetchApi("/bills/analytics");
+      prefetchApi(`/bills/item-report?from=${todayIST}&to=${todayIST}`);
+      prefetchApi("/customers");
+    }, 250);
+    return () => clearTimeout(t);
+  }, [token]);
   // ─── CUSTOMER AUTO-COMPLETE ──────────────────────────────────────────────────
   useEffect(() => {
     const phone = customerForm.phone?.trim();
@@ -210,10 +552,16 @@ export default function App() {
   const cartTotal = cartSubtotal - discountAmt;
 
   // ─── CHECKOUT ───────────────────────────────────────────────────────────────
+  // Half/Full variation ko item name mein jod do (bill print + save dono ke liye)
+  const withVariationNames = (items) =>
+    items.map((i) => {
+      if (!i.selectedVariation) return i;
+      const tag = i.selectedVariation === "half" ? "Half" : "Full";
+      if (/\((Half|Full)\)\s*$/.test(i.name)) return i;
+      return { ...i, name: `${i.name} (${tag})` };
+    });
+
   const checkoutBill = async (paymentMode = "CASH", customDate = null) => {
-    console.log("=== DEBUG ===");
-    console.log("customDate received:", customDate);
-    console.log("date being sent:", customDate ? new Date(customDate + "T12:00:00+05:30").toISOString() : new Date().toISOString());
     if (!cart.length) return;
 
     if (isSubmittingBill.current) {
@@ -240,7 +588,7 @@ export default function App() {
     const bill = {
       id: billId,
       date: customDate ? new Date(customDate + "T00:00:00+05:30").toISOString() : new Date().toISOString(),
-      items: cart,
+      items: withVariationNames(cart),
       subtotal: Math.round(cartSubtotal),
       discountPct: discount,
       discountAmt: Math.round(discountAmt),
@@ -251,23 +599,22 @@ export default function App() {
         customerForm.name || customerForm.phone ? { ...customerForm } : null,
       paymentMode,
     };
-    try {
-      const saved = await apiCall("/bills", "POST", bill);
-      setBills((prev) => [saved, ...prev]);
-      if (customerForm.phone) {
-        const updatedCustomers = await apiCall("/customers");
-        setCustomers(updatedCustomers);
-      }
-      printBill(saved);
-      setCart([]);
-      setCustomerForm({ name: "", phone: "" });
-      setDiscount(0);
-      setCategory("Milk");
-    } catch (e) {
-      alert("Bill save karne mein error: " + e.message);
-    } finally {
-      isSubmittingBill.current = false;
-    }
+            // 1) UI turant free
+    setBills((prev) => [bill, ...prev]);
+    setCart([]);
+    setCustomerForm({ name: "", phone: "" });
+    setDiscount(0);
+    setCategory("Milk");
+
+    // 2) bill pehle device me safe, phir background me server pe
+    queueBill(bill);
+    syncPending();
+
+    // 3) print turant (UI update ke baad)
+    setTimeout(() => printBill(bill), 0);
+
+    // double-click se bachne ke liye chhota lock
+    setTimeout(() => { isSubmittingBill.current = false; }, 300);
   };
 
   // ─── PRODUCT CRUD ───────────────────────────────────────────────────────────
@@ -312,42 +659,11 @@ export default function App() {
     }
   };
 
-  // ─── BILL CRUD ──────────────────────────────────────────────────────────────
-  const handleDeleteBill = async (id) => {
-    const pass = prompt("Admin Password Enter Karo:");
-    if (pass !== "aniket123") {
-      alert("❌ Wrong Password!");
-      return;
-    }
-    setBills((prev) => prev.filter((b) => b.id !== id));
-    try {
-      await apiCall(`/bills/${id}`, "DELETE");
-    } catch (e) {
-      // Agar error aaye toh wapas add karo
-      const bls = await apiCall("/bills");
-      setBills(bls);
-      alert("Bill delete karne mein error: " + e.message);
-    }
-  };
-
-  const handleDeleteAllBills = async () => {
-    const pass = prompt("Admin Password Enter Karo:");
-    if (pass !== "aniket123") {
-      alert("❌ Wrong Password!");
-      return;
-    }
-    try {
-      await apiCall("/bills/all", "DELETE");
-      setBills([]);
-    } catch (e) {
-      alert("Saari bills delete karne mein error: " + e.message);
-    }
-  };
 
   const handleEditBill = async (billId, updatedItems, updatedDiscountPct) => {
     try {
       const updated = await apiCall(`/bills/${billId}`, "PUT", {
-        items: updatedItems,
+        items: withVariationNames(updatedItems),
         discountPct: updatedDiscountPct,
       });
       setBills((prev) => prev.map((b) => (b.id === billId ? updated : b)));
@@ -382,7 +698,7 @@ export default function App() {
           gap: 16,
         }}
       >
-        <div style={{ fontSize: 48 }} onClick={handleSecretTap}>🥛</div>
+        <div style={{ fontSize: 48 }}>🥛</div>
         <div style={{ fontSize: 20, fontWeight: 900, color: "#1a1310" }}>MANISH DAIRY</div>
         <div style={{ fontSize: 14, color: "#8a7e6e" }}>Data load ho raha hai...</div>
       </div>
@@ -431,13 +747,18 @@ export default function App() {
       <Navbar
         view={view}
         setView={setView}
-        onLogout={() => {
-          localStorage.clear();
+          onLogout={() => {
+          localStorage.removeItem("dairy_token");
+          localStorage.removeItem("dairy_shop");
           setToken(null);
         }}
       />
-
-      <div
+        {(!online || pending > 0) && (
+        <div style={{ position: "fixed", top: 6, left: "50%", transform: "translateX(-50%)", zIndex: 150, background: online ? "#f59e0b" : "#ef4444", color: online ? "#1a1310" : "#fff", fontSize: 11, fontWeight: 800, padding: "3px 12px", borderRadius: 999, pointerEvents: "none", whiteSpace: "nowrap" }}>
+          {!online ? "OFFLINE" : "Sync"}{pending > 0 && ` | ${pending} pending`}
+        </div>
+      )}
+            <div
         style={{
           padding: isMobile ? "12px 8px" : "16px 24px",
           maxWidth: 1400,
@@ -450,61 +771,70 @@ export default function App() {
           overflow: isMobile ? "visible" : "auto",
         }}
       >
-        {view === "billing" && (
-          <BillingView
-            products={products}
-            filtered={filtered}
-            bills={bills}
-            category={category}
-            setCategory={setCategory}
-            search={search}
-            setSearch={setSearch}
-            cart={cart}
-            setCart={setCart}
-            addToCart={addToCart}
-            updateQty={updateQty}
-            setQtyPreset={setQtyPreset}
-            cartTotal={cartTotal}
-            cartSubtotal={cartSubtotal}
-            discountAmt={discountAmt}
-            discount={discount}
-            setDiscount={setDiscount}
-            customerForm={customerForm}
-            setCustomerForm={setCustomerForm}
-            checkoutBill={checkoutBill}
-            dbCats={dbCats}
-            editingBillId={editingBillId}
-            onCancelEdit={() => { setEditingBillId(null); setCart([]); setView("sales"); }}
-          />
+        {visitedViews.has("billing") && (
+          <div style={{ display: view === "billing" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <BillingView
+              products={products}
+              filtered={filtered}
+              bills={bills}
+              category={category}
+              setCategory={setCategory}
+              search={search}
+              setSearch={setSearch}
+              cart={cart}
+              setCart={setCart}
+              addToCart={addToCart}
+              updateQty={updateQty}
+              setQtyPreset={setQtyPreset}
+              cartTotal={cartTotal}
+              cartSubtotal={cartSubtotal}
+              discountAmt={discountAmt}
+              discount={discount}
+              setDiscount={setDiscount}
+              customerForm={customerForm}
+              setCustomerForm={setCustomerForm}
+              checkoutBill={checkoutBill}
+              dbCats={dbCats}
+              editingBillId={editingBillId}
+              onCancelEdit={() => { setEditingBillId(null); setCart([]); setView("sales"); }}
+            />
+          </div>
         )}
-        {view === "products" && (
-          <ProductsView
-            products={products}
-            onSave={handleSaveProduct}
-            onDelete={handleDeleteProduct}
-            dbCats={dbCats}
-            setDbCats={setDbCats}
-          />
+        {visitedViews.has("products") && (
+          <div style={{ display: view === "products" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <ProductsView
+              products={products}
+              onSave={handleSaveProduct}
+              onDelete={handleDeleteProduct}
+              dbCats={dbCats}
+              setDbCats={setDbCats}
+            />
+          </div>
         )}
-        {view === "sales" && (
-          <SalesView
-            bills={bills}
-            onDelete={handleDeleteBill}
-            onDeleteAll={handleDeleteAllBills}
-            onEdit={handleEditBill}
-            products={products}
-            setView={setView}
-            onLoadEdit={loadBillIntoCart}
-            onSecretTap={handleSecretTap}
-          />
+        {visitedViews.has("sales") && (
+          <div style={{ display: view === "sales" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <SalesView
+              bills={bills}
+              onEdit={handleEditBill}
+              products={products}
+              setView={setView}
+              onLoadEdit={loadBillIntoCart}
+            />
+          </div>
         )}
-        {view === "analytics" && <AnalyticsView />}
-        {view === "customers" && (
-          <CustomersView
-            customers={customers}
-            setCart={setCart}
-            setView={setView}
-          />
+        {visitedViews.has("analytics") && (
+          <div style={{ display: view === "analytics" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <AnalyticsView />
+          </div>
+        )}
+        {visitedViews.has("customers") && (
+          <div style={{ display: view === "customers" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <CustomersView
+              customers={customers}
+              setCart={setCart}
+              setView={setView}
+            />
+          </div>
         )}
       </div>
     </div>

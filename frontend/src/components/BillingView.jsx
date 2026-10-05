@@ -22,6 +22,8 @@ export default function BillingView({
   customerForm, setCustomerForm, checkoutBill, dbCats,
   editingBillId, onCancelEdit,
 }) {
+    const cartMap = useMemo(() => new Map(cart.map((i) => [i.id, i])), [cart]);
+
   const categoryList = useMemo(() => {
     const set = new Set(CATEGORY_LIST_DEFAULT);
     if (Array.isArray(dbCats)) {
@@ -40,7 +42,7 @@ export default function BillingView({
   const [customDate, setCustomDate] = useState("");
 const [showDatePicker, setShowDatePicker] = useState(false);
   const [popup, setPopup] = useState(null);
-  const [isPrinting, setIsPrinting] = useState(false);
+
   const [paymentMode, setPaymentMode] = useState("CASH");
   const [splitMode, setSplitMode] = useState(false);
   const [cashAmt, setCashAmt] = useState("");
@@ -69,6 +71,9 @@ const [showDatePicker, setShowDatePicker] = useState(false);
     setCustomerForm({ name: "", phone: "" });
     setDiscount(0);
     setPaymentMode("CASH");
+    setSplitMode(false);
+    setCashAmt("");
+    setUpiAmt("");
   };
 
   const resumeBill = (index) => {
@@ -77,6 +82,9 @@ const [showDatePicker, setShowDatePicker] = useState(false);
     setCustomerForm(held.customerForm);
     setDiscount(held.discount);
     setPaymentMode(held.paymentMode);
+    setSplitMode(false);
+    setCashAmt("");
+    setUpiAmt("");
     setHeldBills((prev) => {
       const updated = prev.filter((_, i) => i !== index);
       localStorage.setItem("heldBills", JSON.stringify(updated));
@@ -287,24 +295,22 @@ const [showDatePicker, setShowDatePicker] = useState(false);
             <button onClick={holdBill} style={{ height: 46, padding: "0 14px", borderRadius: 10, background: "#f59e0b", color: "#1a1310", border: "none", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
               ⏸️ Hold
             </button>
-            <button onClick={() => {
-              if (isPrinting) return;
-              setIsPrinting(true);
-              console.log("customDate being passed:", customDate);
+                        <button onClick={() => {
               checkoutBill(splitMode ? `SPLIT(Cash:${cashAmt||0} UPI:${upiAmt||0})` : paymentMode, customDate || null);
               setPaymentMode("CASH");
+              setSplitMode(false);
+              setCashAmt("");
+              setUpiAmt("");
               setCustomDate("");
               setShowDatePicker(false);
-              setPaymentMode("CASH");
-              setTimeout(() => setIsPrinting(false), 5000);
             }} style={{ flex: 1, height: 46, borderRadius: 10, background: "#1a1310", color: "#f59e0b", border: "none", fontWeight: 800, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              <Icon name="print" size={14} /> {isPrinting ? "⏳ Printing..." : editingBillId ? "💾 Update" : "Print & Save"}
+              <Icon name="print" size={14} /> {editingBillId ? "💾 Update" : "Print & Save"}
             </button>
           </div>
 
           {customerForm.phone && (
             <button onClick={() => {
-              const msg = `*MANISH DAIRY*\nJail Chungi, Meerut\n\n${cart.map((i) => `${i.name} x${formatQty(i.qty, i.unit)} = ${formatINR(i.total)}`).join("\n")}\n\nSubtotal: ${formatINR(cartSubtotal)}${discount > 0 ? `\nDiscount (${discount}%): -${formatINR(discountAmt)}` : ""}\n*TOTAL: ${formatINR(cartTotal)}*\n\nThank you! 🥛`;
+              const msg = `*MANISH DAIRY*\nGANGA NAGAR, Meerut\n\n${cart.map((i) => `${i.name} x${formatQty(i.qty, i.unit)} = ${formatINR(i.total)}`).join("\n")}\n\nSubtotal: ${formatINR(cartSubtotal)}${discount > 0 ? `\nDiscount (${discount}%): -${formatINR(discountAmt)}` : ""}\n*TOTAL: ${formatINR(cartTotal)}*\n\nThank you! 🥛`;
               window.open(`https://wa.me/91${customerForm.phone}?text=${encodeURIComponent(msg)}`);
             }} style={{ marginTop: 8, width: "100%", padding: "11px", borderRadius: 10, background: "#25d366", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               <Icon name="whatsapp" size={14} /> Send on WhatsApp
@@ -346,29 +352,32 @@ const [showDatePicker, setShowDatePicker] = useState(false);
         </div>
 
         {/* Product grid 2-col */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
-          {sortedFiltered.map((p) => {
-            const inCart = cart.find((i) => i.id === p.id);
-            return (
-              <button key={p.id} onClick={() => openPopup(p)} style={{
-                background: "#fff", border: `2px solid ${inCart ? CAT_COLORS[p.category] || "#f59e0b" : "#e5e0d8"}`,
-                borderRadius: 12, padding: "10px", textAlign: "left", cursor: "pointer", position: "relative",
-              }}>
-                {inCart && (
-                  <div style={{ position: "absolute", top: 6, right: 6, background: CAT_COLORS[p.category] || "#f59e0b", color: "#fff", borderRadius: 999, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>
-                    ×{formatQty(inCart.qty, inCart.unit)}
-                  </div>
-                )}
-                <div style={{ fontSize: 20, marginBottom: 4 }}>{CAT_ICONS[p.category]}</div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#1a1310", marginBottom: 1, lineHeight: 1.2 }}>{p.name}</div>
-                <div style={{ fontSize: 11, color: "#8a7e6e", marginBottom: 4 }}>{p.category}</div>
-                <div style={{ fontSize: 14, fontWeight: 900, color: CAT_COLORS[p.category] || "#f59e0b" }}>
-                  ₹{p.price}<span style={{ fontSize: 10, fontWeight: 500, color: "#8a7e6e" }}>/{p.unit}</span>
-                </div>
-              </button>
-            );
-          })}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+  {sortedFiltered.map((p) => {
+    const inCart = cartMap.get(p.id);
+    const color = CAT_COLORS[p.category] || "#f59e0b";
+    return (
+      <button key={p.id} onClick={() => openPopup(p)} style={{
+        background: "#fff", border: `2px solid ${inCart ? color : "#e5e0d8"}`,
+        borderRadius: 10, padding: "6px 7px", textAlign: "left", cursor: "pointer",
+        position: "relative", display: "flex", flexDirection: "column",
+        justifyContent: "space-between", minHeight: 68,
+      }}>
+        {inCart && (
+          <div style={{ position: "absolute", top: 3, right: 3, background: color, color: "#fff", borderRadius: 999, fontSize: 9, fontWeight: 800, padding: "1px 5px" }}>
+            ×{formatQty(inCart.qty, inCart.unit)}
+          </div>
+        )}
+        <div style={{ fontSize: 13, fontWeight: 800, color: "#1a1310", lineHeight: 1.15, marginBottom: 3 }}>
+          {p.name}
         </div>
+        <div style={{ fontSize: 14, fontWeight: 900, color }}>
+          ₹{p.price}<span style={{ fontSize: 9, fontWeight: 600, color: "#8a7e6e" }}>/{p.unit}</span>
+        </div>
+      </button>
+    );
+  })}
+</div>
 
         {filtered.length === 0 && <div style={{ textAlign: "center", color: "#8a7e6e", padding: "30px 0", fontSize: 14 }}>No products found</div>}
 
@@ -483,31 +492,32 @@ const [showDatePicker, setShowDatePicker] = useState(false);
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products..."
               style={{ width: "100%", padding: "10px 12px 10px 36px", borderRadius: 10, border: "1px solid #e5e0d8", background: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12 }}>
-            {sortedFiltered.map((p) => {
-              const inCart = cart.find((i) => i.id === p.id);
-              return (
-                <button key={p.id} onClick={() => openPopup(p)} style={{
-                  background: "#fff", border: `2px solid ${inCart ? CAT_COLORS[p.category] || "#f59e0b" : "#e5e0d8"}`,
-                  borderRadius: 14, padding: "14px 12px", textAlign: "left", cursor: "pointer",
-                  transition: "all 0.15s", position: "relative",
-                  boxShadow: inCart ? `0 0 0 3px ${CAT_COLORS[p.category]}22` : "none",
-                }}>
-                  {inCart && (
-                    <div style={{ position: "absolute", top: 8, right: 8, background: CAT_COLORS[p.category] || "#f59e0b", color: "#fff", borderRadius: 999, fontSize: 11, fontWeight: 800, padding: "2px 7px" }}>
-                      ×{formatQty(inCart.qty, inCart.unit)}
-                    </div>
-                  )}
-                  <div style={{ fontSize: 22, marginBottom: 6 }}>{CAT_ICONS[p.category]}</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1310", marginBottom: 2, lineHeight: 1.3 }}>{p.name}</div>
-                  <div style={{ fontSize: 12, color: "#8a7e6e", marginBottom: 6 }}>{p.category}</div>
-                  <div style={{ fontSize: 16, fontWeight: 900, color: CAT_COLORS[p.category] || "#f59e0b" }}>
-                    ₹{p.price}<span style={{ fontSize: 11, fontWeight: 500, color: "#8a7e6e" }}>/{p.unit}</span>
-                  </div>
-                </button>
-              );
-            })}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
+  {sortedFiltered.map((p) => {
+    const inCart = cartMap.get(p.id);
+    const color = CAT_COLORS[p.category] || "#f59e0b";
+    return (
+      <button key={p.id} onClick={() => openPopup(p)} style={{
+        background: "#fff", border: `2px solid ${inCart ? color : "#e5e0d8"}`,
+        borderRadius: 10, padding: "8px 10px", textAlign: "left", cursor: "pointer",
+        position: "relative", display: "flex", flexDirection: "column",
+        justifyContent: "space-between", minHeight: 78,
+      }}>
+        {inCart && (
+          <div style={{ position: "absolute", top: 4, right: 4, background: color, color: "#fff", borderRadius: 999, fontSize: 11, fontWeight: 800, padding: "1px 6px" }}>
+            ×{formatQty(inCart.qty, inCart.unit)}
           </div>
+        )}
+        <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1310", lineHeight: 1.2, marginBottom: 4, paddingRight: inCart ? 34 : 0 }}>
+          {p.name}
+        </div>
+        <div style={{ fontSize: 17, fontWeight: 900, color }}>
+          ₹{p.price}<span style={{ fontSize: 11, fontWeight: 600, color: "#8a7e6e" }}>/{p.unit}</span>
+        </div>
+      </button>
+    );
+  })}
+</div>
           {filtered.length === 0 && <div style={{ textAlign: "center", color: "#8a7e6e", padding: "40px 0", fontSize: 15 }}>No products found</div>}
         </div>
       </div>

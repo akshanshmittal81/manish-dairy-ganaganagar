@@ -51,17 +51,13 @@ export function printBill(bill) {
   `).join("")}
 
   <div class="divider-dash"></div>
-  ${bill.discountPct > 0 ? `
-    <div class="row"><span>Subtotal</span><span>₹${Math.round(bill.subtotal)}</span></div>
-    <div class="row bold"><span>Discount (${bill.discountPct}%)</span><span>-₹${Math.round(bill.discountAmt)}</span></div>
-  ` : ""}
   <div class="divider-solid"></div>
   <div class="total-row"><span>TOTAL</span><span>₹${Math.round(bill.total)}</span></div>
   <div class="divider-solid"></div>
   <div class="payment-row"><span>Payment:</span><span>${bill.paymentMode || "CASH"}</span></div>
 
   <div class="divider-dash"></div>
-  <div class="footer">No Tax Taken From Customer</div>
+  <div class="footer">No Tax Taken From Customer!</div>
   <div class="footer">Thank you!! Please Visit Again!</div>
   <br/>
   </body></html>`;
@@ -73,8 +69,8 @@ export function printBill(bill) {
   iframe.contentDocument.open();
   iframe.contentDocument.write(printContent);
   iframe.contentDocument.close();
-  setTimeout(() => {
-    iframe.contentWindow.print();
-    setTimeout(() => document.body.removeChild(iframe), 1000);
-  }, 150);
+    iframe.contentWindow.onafterprint = () => iframe.remove();
+  iframe.contentWindow.focus();
+  iframe.contentWindow.print();
+  setTimeout(() => iframe.remove(), 60000); // safety cleanup
 }

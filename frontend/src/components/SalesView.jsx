@@ -1,17 +1,23 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Icon from "./Icon";
 import { formatINR, formatDate, formatTime, today, thisMonth } from "../utils/helpers";
 import { apiCall } from "../utils/api";
-import { exportToExcel } from "../utils/exportExcel";
 import { printBill } from "../utils/printBill";
 
 // ─── SALES VIEW ───────────────────────────────────────────────────────────────
-export default function SalesView({ bills: initialBills, onDelete, onDeleteAll, onEdit, products, setView, onLoadEdit, onSecretTap }) {
+export default function SalesView({
+  bills: initialBills,
+  onEdit,
+  products,
+  setView,
+  onLoadEdit
+}) {
   const [filter, setFilter] = useState("today");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [bills, setBills] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [selected, setSelected] = useState([]);
   const [payFilter, setPayFilter] = useState("ALL");
   const [listLimit, setListLimit] = useState(150);
@@ -26,10 +32,26 @@ export default function SalesView({ bills: initialBills, onDelete, onDeleteAll, 
     upiCount: 0
   });
 
+  // Listen to background mutation event to auto-refresh current sales view
+  useEffect(() => {
+    const handleDataChanged = (e) => {
+      if (e.detail?.path?.includes("/bills")) {
+        setRefreshKey(k => k + 1);
+      }
+    };
+    window.addEventListener("dairy_data_changed", handleDataChanged);
+    return () => window.removeEventListener("dairy_data_changed", handleDataChanged);
+  }, []);
+
   // ─── Fetch bills and summary from backend ──────────────────────────────────
   useEffect(() => {
+    let cancelled = false;
+
     async function fetchData() {
-      setLoading(true);
+      // If we don't have any bills yet, show loading
+      if (bills.length === 0 && summary.billsCount === 0) {
+        setLoading(true);
+      }
       const todayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const yesterdayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000 - 86400000).toISOString().slice(0, 10);
 
@@ -50,22 +72,42 @@ export default function SalesView({ bills: initialBills, onDelete, onDeleteAll, 
           apiCall(`/bills?${queryParams}&limit=${listLimit}`)
         ]);
 
+        if (cancelled) return;
+
         setSummary(sumData);
         setBills(Array.isArray(billsRes) ? billsRes : (billsRes.bills || []));
       } catch (e) {
-        console.error(e);
+        if (!cancelled) console.error(e);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-    fetchData();
-  }, [filter, startDate, endDate, listLimit]);
 
-  // ─── Filter list on clientside only by paymentMode ─────────────────────────
-  const filtered = bills.filter((b) => {
-    if (payFilter !== "ALL" && (b.paymentMode || "CASH") !== payFilter) return false;
-    return true;
-  });
+    fetchData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [filter, startDate, endDate, listLimit, refreshKey]);
+
+  // ─── Filter list on clientside only by paymentMode (memoized) ───────────────
+  const filtered = useMemo(() => {
+    return bills.filter((b) => {
+      if (payFilter === "ALL") return true;
+      const mode = b.paymentMode || "CASH";
+      if (mode.startsWith("SPLIT")) {
+        const m = mode.match(/Cash:([\d.]+)\s+UPI:([\d.]+)/i);
+        if (!m) return payFilter === "CASH";
+        return payFilter === "CASH" ? Number(m[1]) > 0 : Number(m[2]) > 0;
+      }
+      return mode === payFilter;
+    });
+  }, [bills, payFilter]);
+
+  // Memoized sorted bills list to avoid thousands of date allocations per render
+  const sortedBills = useMemo(() => {
+    return [...filtered].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [filtered]);
 
   // KPI card calculations using 100% accurate database-driven summary
   let displaySales = summary.totalSales;
@@ -90,50 +132,67 @@ export default function SalesView({ bills: initialBills, onDelete, onDeleteAll, 
     all: "All Time",
     custom: startDate && endDate ? `${startDate} → ${endDate}` : startDate ? `From ${startDate}` : "Custom Range",
   };
+const checkAdminPassword = () => {
+  const pass = prompt("Admin Password Enter Karo:");
 
-  const toggleSelect = (id) => {
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
+  if (pass !== "aniket123") {
+    alert("❌ Wrong Password!");
+    return false;
+  }
 
-  // ─── Shared password check (same as Delete) ────────────────────────────────
-  const checkAdminPassword = () => {
-    const pass = prompt("Admin Password Enter Karo:");
-    if (pass !== "aniket123") {
-      alert("❌ Wrong Password!");
-      return false;
-    }
-    return true;
-  };
-
-  const deleteSelected = async () => {
-    if (!selected.length) return;
-    if (!checkAdminPassword()) return;
-    if (!window.confirm(`${selected.length} bills delete karne hain?`)) return;
-    for (const id of selected) await onDelete(id);
-    setSelected([]);
-  };
-
-  const deleteAll = () => {
-    if (!checkAdminPassword()) return;
-    if (!window.confirm("Saari history delete karna chahte ho? Yeh action undo nahi hoga!")) return;
-    onDeleteAll();
-    setSelected([]);
-  };
+  return true;
+};
 
   // ─── Edit now requires admin password too ──────────────────────────────────
   const handleEditClick = (b) => {
     if (!checkAdminPassword()) return;
     onLoadEdit(b);
   };
+    const [exporting, setExporting] = useState(false);
 
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const todayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const yesterdayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000 - 86400000).toISOString().slice(0, 10);
+      let queryParams = "";
+      if (filter === "today") queryParams = `date=${todayIST}`;
+      else if (filter === "yesterday") queryParams = `date=${yesterdayIST}`;
+      else if (filter === "month") queryParams = `month=${thisMonth()}`;
+      else if (filter === "all") queryParams = "";
+      else if (filter === "custom" && startDate) queryParams = `date=${startDate}&endDate=${endDate || startDate}`;
+
+      const allBillsRes = await apiCall(`/bills?${queryParams}&noLimit=true&limit=1000000`);
+      const allBills = Array.isArray(allBillsRes) ? allBillsRes : (allBillsRes.bills || []);
+      const toExport = payFilter === "ALL" ? allBills : allBills.filter((b) => {
+        const mode = b.paymentMode || "CASH";
+        if (mode.startsWith("SPLIT")) {
+          const m = mode.match(/Cash:([\d.]+)\s+UPI:([\d.]+)/i);
+          if (!m) return payFilter === "CASH";
+          return payFilter === "CASH" ? Number(m[1]) > 0 : Number(m[2]) > 0;
+        }
+        return mode === payFilter;
+      });
+
+      const { exportToExcel } = await import("../utils/exportExcel");
+      exportToExcel(toExport, filter, filter === "custom" ? (startDate === endDate || !endDate ? startDate : `${startDate}_${endDate}`) : null);
+    } catch (e) {
+      console.error(e);
+      alert("Export fail ho gaya, dobara try karo.");
+    } finally {
+      setExporting(false);
+    }
+  };
   const isMobile = window.innerWidth < 768;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 12 : 20, padding: isMobile ? "0 4px" : 0 }}>
       {/* Header + filters */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ fontSize: 20, fontWeight: 900, color: "#1a1310" }} onClick={onSecretTap}>💰 Sales Overview</div>
+        <div style={{ fontSize: 20, fontWeight: 900, color: "#1a1310" }}>
+  💰 Sales Overview
+</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: isMobile ? "center" : "flex-start" }}>
-          {["today", "yesterday", "month", "all"].map((f) => (
+          {["today", "yesterday", "month"].map((f) => (
             <button key={f} onClick={() => setFilter(f)}
               style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid", borderColor: filter === f ? "#f59e0b" : "#e5e0d8", background: filter === f ? "#f59e0b" : "#fff", color: filter === f ? "#1a1310" : "#8a7e6e" }}>
               {labels[f]}
@@ -161,29 +220,32 @@ export default function SalesView({ bills: initialBills, onDelete, onDeleteAll, 
               {pm === "ALL" ? "💳 All" : pm === "CASH" ? "💵 Cash" : "📲 UPI"}
             </button>
           ))}
-
-          {selected.length > 0 && (
-            <button onClick={deleteSelected} style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid #ef4444", background: "#ef4444", color: "#fff" }}>
-              🗑️ Delete Selected ({selected.length})
-            </button>
-          )}
-          <button onClick={deleteAll} style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid #ef4444", background: "#fff", color: "#ef4444" }}>
-            🗑️ Delete All
-          </button>
         </div>
-        <button onClick={() => exportToExcel(filtered, filter, filter === "custom" ? (startDate === endDate || !endDate ? startDate : `${startDate}_${endDate}`) : null)} style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", border: "1.5px solid #16a34a", background: "#f0fdf4", color: "#16a34a" }}>
-          📊 Export Excel
+        <button onClick={handleExport} disabled={exporting} style={{ padding: "8px 18px", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: exporting ? "not-allowed" : "pointer", border: "1.5px solid #16a34a", background: "#f0fdf4", color: "#16a34a", opacity: exporting ? 0.6 : 1 }}>
+          {exporting ? "⏳ Exporting..." : "📊 Export Excel"}
         </button>
       </div>
 
       {/* KPI cards */}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(auto-fill, minmax(200px, 1fr))", gap: isMobile ? 10 : 16 }}>
         {[
-          { label: "Total Sales", value: formatINR(displaySales), color: "#2563eb", icon: "💳", sub: `${displayCount} bills` },
-          { label: "Total Profit", value: formatINR(displayProfit), color: "#16a34a", icon: "📈", sub: "Calculated profit" },
-          { label: "Discount Given", value: formatINR(displayDiscount), color: "#f59e0b", icon: "🏷️", sub: "Total discounts" },
-          { label: "Avg Bill Value", value: displayCount ? formatINR(displaySales / displayCount) : "₹0.00", color: "#7c3aed", icon: "🧾", sub: "per bill" },
-        ].map((k) => (
+  {
+    label: "Total Sales",
+    value: formatINR(displaySales),
+    color: "#2563eb",
+    icon: "💳",
+    sub: `${displayCount} bills`
+  },
+  {
+    label: "Avg Bill Value",
+    value: displayCount
+      ? formatINR(displaySales / displayCount)
+      : "₹0.00",
+    color: "#7c3aed",
+    icon: "🧾",
+    sub: "per bill"
+  },
+].map((k) => (
           <div key={k.label} style={{ background: "#fff", borderRadius: 16, padding: isMobile ? "14px" : "20px", border: "1px solid #e5e0d8" }}>
             <div style={{ fontSize: isMobile ? 18 : 22, marginBottom: 4 }}>{k.icon}</div>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#8a7e6e", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>{k.label}</div>
@@ -219,10 +281,9 @@ export default function SalesView({ bills: initialBills, onDelete, onDeleteAll, 
             Koi bill nahi {labels[filter].toLowerCase()} mein
           </div>
         )}
-        {[...filtered].sort((a, b) => new Date(b.date) - new Date(a.date)).map((b, i) => (
+        {!loading && sortedBills.map((b, i) => (
           <div key={b.id}
-            style={{ display: "flex", alignItems: "center", padding: isMobile ? "10px 12px" : "13px 20px", borderTop: i > 0 ? "1px solid #f0ebe4" : "none", gap: isMobile ? 8 : 16, flexWrap: "wrap", background: selected.includes(b.id) ? "#fff8ee" : "transparent" }}>
-            <input type="checkbox" checked={selected.includes(b.id)} onChange={() => toggleSelect(b.id)} style={{ width: 16, height: 16, cursor: "pointer", flexShrink: 0 }} />
+            style={{ display: "flex", alignItems: "center", padding: isMobile ? "10px 12px" : "13px 20px", borderTop: i > 0 ? "1px solid #f0ebe4" : "none", gap: isMobile ? 8 : 16, flexWrap: "wrap", background: "transparent" }}>
             <div style={{ flex: 1, minWidth: 140 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1310" }}>
                 Token: {b.id?.slice(-3)}
@@ -231,9 +292,8 @@ export default function SalesView({ bills: initialBills, onDelete, onDeleteAll, 
             </div>
             {b.customer?.name && <div style={{ fontSize: 12, color: "#4a3f35" }}>👤 {b.customer.name}</div>}
             <div style={{ fontSize: 12, color: "#8a7e6e" }}>{b.items?.length} items</div>
-            {b.discountPct > 0 && <div style={{ fontSize: 12, color: "#f59e0b", fontWeight: 700 }}>🏷️ {b.discountPct}% off</div>}
             <div style={{ fontSize: 11, fontWeight: 800, padding: "3px 8px", borderRadius: 20, background: (b.paymentMode || "CASH") === "UPI" ? "#eff6ff" : "#f0fdf4", color: (b.paymentMode || "CASH") === "UPI" ? "#2563eb" : "#16a34a" }}>
-              {(b.paymentMode || "CASH") === "UPI" ? "📲 UPI" : "💵 CASH"}
+              {(b.paymentMode || "CASH").startsWith("SPLIT") ? "✂️ SPLIT" : (b.paymentMode || "CASH") === "UPI" ? "📲 UPI" : "💵 CASH"}
             </div>
             <div style={{ textAlign: "right" }}>{formatINR(b.total)}</div>
             <button onClick={() => handleEditClick(b)}
@@ -244,17 +304,8 @@ export default function SalesView({ bills: initialBills, onDelete, onDeleteAll, 
               style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e5e0d8", background: "#fff", cursor: "pointer", fontSize: 11, color: "#4a3f35", display: "flex", gap: 4, alignItems: "center" }}>
               <Icon name="print" size={12} /> Print
             </button>
-            <button onClick={async () => {
-              if (!checkAdminPassword()) return;
-              if (window.confirm("Yeh bill delete karein?")) {
-                setBills((prev) => prev.filter((x) => x.id !== b.id));
-                await onDelete(b.id);
-              }
-            }}
-              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fff", cursor: "pointer", fontSize: 11, color: "#ef4444", display: "flex", gap: 4, alignItems: "center" }}>
-              <Icon name="trash" size={12} /> Delete
-            </button>
-          </div>
+            
+            </div>
         ))}
 
         {/* Load More Button */}

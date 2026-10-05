@@ -3,9 +3,9 @@ import { CAT_COLORS } from "../utils/constants";
 import { formatINR, formatDate, formatTime, formatQty } from "../utils/helpers";
 import { useState, useMemo, useEffect } from "react";
 import { apiCall } from "../utils/api";
-import * as XLSX from "xlsx";
 
-export default function AnalyticsView() {
+
+function AnalyticsContent() {
   const getIndiaDate = (d = new Date()) =>
     new Date(d.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })).toLocaleDateString("en-CA");
 
@@ -22,18 +22,19 @@ export default function AnalyticsView() {
   const isMobile = window.innerWidth < 768;
 
   // ─── Fetch overall analytics on mount ──────────────────────────────────────
-  useEffect(() => {
-    async function fetchAnalytics() {
-      setLoading(true);
-      try {
-        const res = await apiCall("/bills/analytics");
-        setAnalytics(res);
-      } catch (err) {
-        console.error("Analytics fetch error:", err);
-      } finally {
-        setLoading(false);
-      }
+  async function fetchAnalytics() {
+    if (!analytics) setLoading(true);
+    try {
+      const res = await apiCall("/bills/analytics");
+      setAnalytics(res);
+    } catch (err) {
+      console.error("Analytics fetch error:", err);
+    } finally {
+      setLoading(false);
     }
+  }
+
+  useEffect(() => {
     fetchAnalytics();
   }, []);
 
@@ -57,29 +58,39 @@ export default function AnalyticsView() {
   }, [period, customFrom, customTo]);
 
   // ─── Fetch date-wise item report ───────────────────────────────────────────
-  useEffect(() => {
-    let ignore = false; // 🛡️ race-condition guard
-
-    async function fetchReport() {
-      setReportLoading(true);
-      try {
-        const params = fromDate && toDate ? `?from=${fromDate}&to=${toDate}` : "";
-        const res = await apiCall(`/bills/item-report${params}`);
-        if (!ignore) {
-          setReportData(res || []);
-        }
-      } catch (err) {
-        if (!ignore) console.error("Item report fetch error:", err);
-      } finally {
-        if (!ignore) setReportLoading(false);
+  async function fetchReport(ignoreRef) {
+    setReportLoading(true);
+    try {
+      const params = fromDate && toDate ? `?from=${fromDate}&to=${toDate}` : "";
+      const res = await apiCall(`/bills/item-report${params}`);
+      if (!ignoreRef || !ignoreRef.current) {
+        setReportData(res || []);
       }
+    } catch (err) {
+      if (!ignoreRef || !ignoreRef.current) console.error("Item report fetch error:", err);
+    } finally {
+      if (!ignoreRef || !ignoreRef.current) setReportLoading(false);
     }
+  }
 
-    fetchReport();
-
+  useEffect(() => {
+    const ignoreRef = { current: false };
+    fetchReport(ignoreRef);
     return () => {
-      ignore = true; // jab fromDate/toDate change ho, purani request ka result ignore karo
+      ignoreRef.current = true;
     };
+  }, [fromDate, toDate]);
+
+  // Listen to background mutation event
+  useEffect(() => {
+    const handleDataChanged = (e) => {
+      if (e.detail?.path?.includes("/bills")) {
+        fetchAnalytics();
+        fetchReport();
+      }
+    };
+    window.addEventListener("dairy_data_changed", handleDataChanged);
+    return () => window.removeEventListener("dairy_data_changed", handleDataChanged);
   }, [fromDate, toDate]);
   // Date-wise totals from report data
   const filteredTotal = useMemo(() => reportData.reduce((s, i) => s + i.revenue, 0), [reportData]);
@@ -94,6 +105,23 @@ export default function AnalyticsView() {
       .filter(i => selectedCategory === "All" || (i.category || "Other") === selectedCategory)
       .sort((a, b) => b.revenue - a.revenue);
   }, [reportData, selectedCategory]);
+
+  // Category-wise subtotals (selected period ke hisab se)
+  const categoryTotals = useMemo(() => {
+    const map = {};
+    reportData.forEach((i) => {
+      const c = i.category || "Other";
+      if (!map[c]) map[c] = { revenue: 0, items: 0 };
+      map[c].revenue += i.revenue;
+      map[c].items += 1;
+    });
+    return map;
+  }, [reportData]);
+
+  const selectedTotal = useMemo(
+    () => filteredItemData.reduce((s, i) => s + i.revenue, 0),
+    [filteredItemData]
+  );
 
   const maxSales = useMemo(() => {
     if (!analytics || !analytics.daily || !analytics.daily.length) return 1;
@@ -122,12 +150,13 @@ export default function AnalyticsView() {
     return `${fromDate} to ${toDate}`;
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (!filteredItemData.length) return;
+    const XLSX = await import("xlsx");
 
     // Title / meta rows on top of the sheet
     const metaRows = [
-      ["MANISH DAIRY JAILCHUNGI - Date-wise Item Report"],
+      ["MANISH DAIRY GANGANAGAR - Date-wise Item Report"],
       [periodLabelForSheet()],
       [],
     ];
@@ -142,7 +171,7 @@ export default function AnalyticsView() {
       item.revenue,
     ]);
 
-    const totalRow = ["", "", "", "Total", filteredTotal];
+    const totalRow = ["", "", "", selectedCategory === "All" ? "Total" : `${selectedCategory} Total`, selectedTotal];
 
     const sheetData = [...metaRows, headerRow, ...dataRows, totalRow];
 
@@ -163,7 +192,7 @@ export default function AnalyticsView() {
     XLSX.writeFile(wb, `Manish-Dairy-Item-Report-${periodLabelForFile()}.xlsx`);
   };
 
-  if (loading || !analytics) {
+  if (!analytics && loading) {
     return (
       <div style={{ textAlign: "center", padding: "100px 0", fontSize: 15, color: "#8a7e6e" }}>
         ⏳ Loading Manish Dairy Analytics...
@@ -176,13 +205,21 @@ export default function AnalyticsView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* KPI row */}
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 10 : 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(2, 1fr)", gap: isMobile ? 10 : 16 }}>
         {[
-          { label: "Today Sales", value: formatINR(today.revenue), color: "#2563eb", sub: `${today.bills} bills today` },
-          { label: "Today Profit", value: formatINR(today.profit), color: "#16a34a", sub: `${today.revenue > 0 ? Math.round((today.profit / today.revenue) * 100) : 0}% margin` },
-          { label: "Total Sales", value: formatINR(allTime.revenue), color: "#7c3aed", sub: `${allTime.bills} bills total` },
-          { label: "Total Profit", value: formatINR(allTime.profit), color: "#ea580c", sub: `${allTime.revenue > 0 ? Math.round((allTime.profit / allTime.revenue) * 100) : 0}% margin` },
-        ].map((k) => (
+  {
+    label: "Today Sales",
+    value: formatINR(today.revenue),
+    color: "#2563eb",
+    sub: `${today.bills} bills today`
+  },
+  {
+    label: "Total Sales",
+    value: formatINR(allTime.revenue),
+    color: "#7c3aed",
+    sub: `${allTime.bills} bills total`
+  },
+].map((k) => (
           <div key={k.label} style={{ background: "#fff", borderRadius: 16, padding: "20px", border: "1px solid #e5e0d8" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#8a7e6e", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>{k.label}</div>
             <div style={{ fontSize: 22, fontWeight: 900, color: k.color, marginBottom: 4 }}>{k.value}</div>
@@ -263,7 +300,10 @@ export default function AnalyticsView() {
           {allCategories.map((cat) => (
             <button key={cat} onClick={() => setSelectedCategory(cat)}
               style={{ padding: "7px 14px", borderRadius: 10, border: "1px solid #e5e0d8", background: selectedCategory === cat ? "#1a1310" : "#fff", color: selectedCategory === cat ? "#f59e0b" : "#4a3f35", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-              {cat}
+              {cat}{" "}
+              <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.8 }}>
+                ({formatINR(cat === "All" ? filteredTotal : categoryTotals[cat]?.revenue || 0)})
+              </span>
             </button>
           ))}
         </div>
@@ -274,6 +314,34 @@ export default function AnalyticsView() {
           </span>
           <span style={{ fontSize: 14, fontWeight: 900, color: "#2563eb" }}>{formatINR(filteredTotal)}</span>
         </div>
+
+        {/* Category Subtotal */}
+        {!reportLoading && reportData.length > 0 && (
+          selectedCategory === "All" ? (
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(auto-fill, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
+              {Object.entries(categoryTotals)
+                .sort((a, b) => b[1].revenue - a[1].revenue)
+                .map(([cat, v]) => (
+                  <div key={cat} onClick={() => setSelectedCategory(cat)}
+                    style={{ cursor: "pointer", background: "#fff", border: `2px solid ${CAT_COLORS[cat] || "#e5e0d8"}`, borderRadius: 12, padding: "10px 14px" }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: CAT_COLORS[cat] || "#8a7e6e", textTransform: "uppercase" }}>{cat}</div>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: "#1a1310" }}>{formatINR(v.revenue)}</div>
+                    <div style={{ fontSize: 11, color: "#8a7e6e" }}>{v.items} items</div>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <div style={{ background: "#1a1310", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#c9b9a8", textTransform: "uppercase", letterSpacing: 1 }}>{selectedCategory} Subtotal</div>
+                <div style={{ fontSize: 12, color: "#8a7e6e", marginTop: 2 }}>
+                  {filteredItemData.length} items · {filteredTotal > 0 ? ((selectedTotal / filteredTotal) * 100).toFixed(1) : 0}% of total
+                </div>
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: "#f59e0b" }}>{formatINR(selectedTotal)}</div>
+            </div>
+          )
+        )}
 
         {reportLoading && <div style={{ color: "#8a7e6e", textAlign: "center", padding: "20px 0", fontSize: 13 }}>⏳ Fetching report...</div>}
         {!reportLoading && filteredItemData.length === 0 && <div style={{ color: "#c9b9a8", textAlign: "center", padding: "20px 0" }}>Is date koi sale nahi</div>}
@@ -290,6 +358,71 @@ export default function AnalyticsView() {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+// ─── PASSWORD GATE ───────────────────────────────────────────
+export default function AnalyticsView() {
+  const [unlocked, setUnlocked] = useState(false);
+  const [pwd, setPwd] = useState("");
+  const [err, setErr] = useState("");
+  const [checking, setChecking] = useState(false);
+
+  const unlock = async () => {
+    if (!pwd || checking) return;
+    setChecking(true);
+    setErr("");
+    try {
+      await apiCall("/auth/verify-admin", "POST", { password: pwd });
+      setUnlocked(true);
+      setPwd("");
+    } catch (e) {
+      setErr("❌ " + e.message);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  if (unlocked) {
+    return (
+      <div>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+          <button
+            onClick={() => setUnlocked(false)}
+            style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #e5e0d8", background: "#fff", color: "#4a3f35", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+          >
+            🔒 Lock
+          </button>
+        </div>
+        <AnalyticsContent />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", justifyContent: "center", padding: "60px 16px" }}>
+      <div style={{ background: "#fff", borderRadius: 18, border: "1px solid #e5e0d8", padding: 28, width: 320, maxWidth: "100%", textAlign: "center", boxSizing: "border-box" }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>🔒</div>
+        <div style={{ fontSize: 17, fontWeight: 900, color: "#1a1310", marginBottom: 4 }}>Analytics Locked</div>
+        <div style={{ fontSize: 12, color: "#8a7e6e", marginBottom: 18 }}>Admin password daalo</div>
+        <input
+          type="password"
+          value={pwd}
+          onChange={(e) => setPwd(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && unlock()}
+          placeholder="Password"
+          autoFocus
+          style={{ width: "100%", padding: "11px 14px", border: "1.5px solid #e5e0d8", borderRadius: 10, fontSize: 14, outline: "none", marginBottom: 12, boxSizing: "border-box" }}
+        />
+        {err && <div style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>{err}</div>}
+        <button
+          onClick={unlock}
+          disabled={checking}
+          style={{ width: "100%", padding: 12, background: "#1a1310", color: "#f59e0b", border: "none", borderRadius: 10, fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: checking ? 0.7 : 1 }}
+        >
+          {checking ? "Checking..." : "Unlock"}
+        </button>
       </div>
     </div>
   );
